@@ -405,7 +405,7 @@ namespace Mice
                 {
                     
                     invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
-                    var a = invoke.Parameters[0];
+                    //var a = invoke.Parameters[0]
 
                 }
                 else
