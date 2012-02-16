@@ -33,16 +33,7 @@ namespace Cheese
             return "Hi i am just a static method";
         }
 
-        public struct InnerStruct
-        {
-            private int a;
-            private string b;
-            private float c;
-
-            public delegate string IntroduceItself(InnerStruct self);
-            public IntroduceItself IntroduceItselfImpl;
-        }
-
-        public static InnerStruct InnerStructStaticSample ;
+        public delegate string IntroduceItselfDelegate(GenericStorage<T> self);
+        public IntroduceItselfDelegate IntroduceItselfImpl;
     }
 }

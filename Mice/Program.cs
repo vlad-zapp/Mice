@@ -12,7 +12,7 @@ namespace Mice
 {
     static class Program
     {
-
+        public static TypeDefinition type;
         static int Main(string[] args)
         {
             if (args.Length < 1)
@@ -67,6 +67,7 @@ namespace Mice
 
         private static void ProcessType(TypeDefinition type)
         {
+            Program.type = type;
             TypeDefinition prototypeType = CreatePrototypeType(type);
 
             FieldDefinition prototypeField = new FieldDefinition(type.Name + "Prototype", FieldAttributes.Public, prototypeType);
@@ -403,10 +404,19 @@ namespace Mice
             {
                 if (method.DeclaringType.HasGenericParameters)
                 {
-                    
-                    invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
-                    //var a = invoke.Parameters[0]
 
+                    ParameterDefinition param = new ParameterDefinition("self", ParameterAttributes.None,method.DeclaringType);
+                    param.Attributes = ParameterAttributes.None;
+
+                    var x = param.ParameterType.GenericParameters[0];
+                    var y = new GenericParameter("V", type);
+                                            
+                    //param.ParameterType.GenericParameters.Add(y);
+                    param.ParameterType = new GenericInstanceType(param.ParameterType);
+                    ((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(x);
+                    //param.ParameterType = new GenericInstanceType(param.ParameterType);
+                    //((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(x);
+                    invoke.Parameters.Add(param);
                 }
                 else
                 {
