@@ -352,7 +352,11 @@ namespace Mice
 			TypeDefinition result = new TypeDefinition(null, "PrototypeClass", 
 				TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.BeforeFieldInit | TypeAttributes.SequentialLayout, 
 				type.Module.Import(typeof(ValueType)));
-			type.NestedTypes.Add(result);
+		    foreach(var ParentGenericParam in type.GenericParameters)
+		    {
+                result.GenericParameters.Add(ParentGenericParam);
+		    }
+		    type.NestedTypes.Add(result);
 			result.DeclaringType = type;
 
 			return result;
