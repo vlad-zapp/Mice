@@ -44,6 +44,7 @@ namespace Mice
 			catch (Exception e)
 			{
 				Console.WriteLine("Error. " + e.ToString());
+			    Console.ReadKey();
 				return 1;
 			}
 		}
@@ -52,7 +53,7 @@ namespace Mice
 		{
 			return type.IsPublic && 
 				!type.IsEnum &&
-				type.GenericParameters.Count == 0 &&
+				//type.GenericParameters.Count == 0 &&
 				!type.IsValueType && 
 				!type.IsInterface &&
 				type.BaseType.Name != "MulticastDelegate";
@@ -67,6 +68,10 @@ namespace Mice
 		private static void ProcessType(TypeDefinition type)
 		{
 			TypeDefinition prototypeType = CreatePrototypeType(type);
+
+            if (type.HasGenericParameters)
+                //this is the end for generics for now
+                return;
 
 			FieldDefinition prototypeField = new FieldDefinition(type.Name + "Prototype", FieldAttributes.Public, prototypeType);
 			type.Fields.Add(prototypeField);
