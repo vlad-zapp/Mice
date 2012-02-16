@@ -17,5 +17,30 @@ namespace Cheese
         {
             Data = initial_value;
         }
+
+        public string IntroduceItself()
+        {
+            return String.Format("Hello, i am {0}", typeof(T).ToString());
+        }
+
+        public string IntroduceItself(string greeting)
+        {
+            return String.Format("{1} {0}", greeting, typeof(T).ToString());
+        }
+
+        public static string IntroduceItselfStatic()
+        {
+            return "Hi i am just a static method";
+        }
+
+        public struct InnerStruct
+        {
+            private int a;
+            private string b;
+            private float c;
+
+            public delegate void IntroduceItself();
+            public IntroduceItself IntroduceItselfImpl;
+        }
     }
 }
