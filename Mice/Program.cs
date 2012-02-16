@@ -401,7 +401,17 @@ namespace Mice
             invoke.IsRuntime = true;
             if (!method.IsStatic)
             {
-                invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
+                if (method.DeclaringType.HasGenericParameters)
+                {
+                    
+                    invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
+                    var a = invoke.Parameters[0];
+
+                }
+                else
+                {
+                    invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
+                }
             }
             foreach (var param in method.Parameters)
             {
@@ -409,6 +419,8 @@ namespace Mice
             }
             result.Methods.Add(invoke);
 
+
+            //the rest of the process
             MakeGenericType(parentType, result);
             result.DeclaringType = parentType;
             parentType.NestedTypes.Add(result);

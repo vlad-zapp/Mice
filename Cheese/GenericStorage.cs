@@ -39,8 +39,10 @@ namespace Cheese
             private string b;
             private float c;
 
-            public delegate void IntroduceItself();
+            public delegate string IntroduceItself(InnerStruct self);
             public IntroduceItself IntroduceItselfImpl;
         }
+
+        public static InnerStruct InnerStructStaticSample ;
     }
 }
