@@ -12,98 +12,96 @@ namespace Mice
 {
     static class Program
     {
-        public static TypeDefinition type;
+        #region main
         static int Main(string[] args)
         {
             if (args.Length < 1)
-            {
-                Using();
-                return 1;
-            }
+                return Using();
 
             string victimName = args[0];
             string keyFile = args.Length > 1 ? args[1] : null;
 
-            try
-            {
-                var assembly = AssemblyDefinition.ReadAssembly(victimName);
-                foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
-                {
-                    ProcessType(type);
-                }
+            //try
+            //{
+            var assembly = AssemblyDefinition.ReadAssembly(victimName);
+            foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
+                ProcessType(type);
 
-                var writerParams = new WriterParameters();
-                if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
-                {
-                    writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
-                }
+            var writerParams = new WriterParameters();
+            if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
+                writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
 
-                assembly.Write(victimName, writerParams);
-                return 0;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Error. " + e.ToString());
-                Console.ReadKey();
-                return 1;
-            }
+            assembly.Write(victimName, writerParams);
+            return 0;
+            //}
+            //catch (Exception e)
+            //{
+            //    Console.WriteLine("Error. " + e.ToString());
+            //    Console.ReadKey();
+            //    return 1;
+            //}
         }
+        private static int Using()
+        {
+            Console.WriteLine("Usage: mice.exe assembly-name.dll [key-file.snk]");
+            return 1;
+        }
+        #endregion
+
+        #region checkings
 
         private static bool IsTypeToBeProcessed(TypeDefinition type)
         {
             return type.IsPublic &&
                 !type.IsEnum &&
-                //type.GenericParameters.Count == 0 &&
                 !type.IsValueType &&
                 !type.IsInterface &&
                 type.BaseType.Name != "MulticastDelegate";
         }
 
-        private static void Using()
+        private static bool IsMethodToBeProcessed(MethodDefinition m)
         {
-            Console.WriteLine("Usage: mice.exe assembly-name.dll [key-file.snk]");
+            return (m.IsPublic) &&
+                m.GenericParameters.Count == 0 &&
+                !m.IsAbstract &&
+                !(m.IsStatic && m.IsConstructor);
         }
 
+        #endregion
 
         private static void ProcessType(TypeDefinition type)
         {
-            Program.type = type;
             TypeDefinition prototypeType = CreatePrototypeType(type);
 
-            FieldDefinition prototypeField = new FieldDefinition(type.Name + "Prototype", FieldAttributes.Public, prototypeType);
-            MakeGenericField(prototypeType, prototypeField);
+            FieldDefinition prototypeField = new FieldDefinition(type.Name.Replace('`', '_') + "Prototype", FieldAttributes.Public, prototypeType);
             type.Fields.Add(prototypeField);
+            MakeGenericField(prototypeField);
 
             FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType);
-            MakeGenericField(prototypeType, staticPrototypeField);
             type.Fields.Add(staticPrototypeField);
-
-            MethodDefinition[] methods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
-            Dictionary<string, int> name2Count = methods.GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.Count());
+            MakeGenericField(staticPrototypeField);
 
             //create delegate types & fields, patch methods to call delegates
-            foreach (var method in methods)
+            var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
+            foreach (var method in processingMethods)
             {
-                bool includeParamsToName = name2Count[method.Name] > 1;
-
-                var delegateType = CreateDeligateType(method, prototypeType, includeParamsToName);
-                var delegateField = CreateDeligateField(prototypeType, method, delegateType, includeParamsToName);
-
-                MethodDefinition newMethod = MoveCodeToImplMethod(method);
-
-                //AddStaticPrototypeCall(method, delegateField, staticPrototypeField);
-
-                if (!method.IsStatic)
+                if (!(method.IsConstructor || method.IsGetter || method.IsSetter))
                 {
-                    //AddInstancePrototypeCall(method, delegateField, prototypeField);
+                    CreateDeligateType(method);
+                    CreateDeligateField(method);
+
+                    //MethodDefinition newMethod = MoveCodeToImplMethod(method);
+
+                    //AddStaticPrototypeCall(method, delegateField, staticPrototypeField);
+
+                    if (!method.IsStatic)
+                    {
+                        //AddInstancePrototypeCall(method, delegateField, prototypeField);
+                    }
                 }
             }
 
-            if (type.HasGenericParameters)
-            {
-                //this is the end for generics for now
-                return;
-            }
+            if (type.HasGenericParameters) return; //generics processing stop here))
 
             //After using of Mice there always should be a wasy to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
@@ -114,8 +112,8 @@ namespace Mice
 
                 if (privateDefaultCtor != null)
                 {
-                    var delegateType = CreateDeligateType(privateDefaultCtor, prototypeType, false);
-                    var delegateField = CreateDeligateField(prototypeType, privateDefaultCtor, delegateType, false);
+                    var delegateType = CreateDeligateType(privateDefaultCtor);
+                    var delegateField = CreateDeligateField(privateDefaultCtor);
 
                     MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
                     AddStaticPrototypeCall(privateDefaultCtor, delegateField, staticPrototypeField);
@@ -148,14 +146,6 @@ namespace Mice
             return constructor;
         }
 
-        private static bool IsMethodToBeProcessed(MethodDefinition m)
-        {
-            return (m.IsPublic) &&
-                m.GenericParameters.Count == 0 &&
-                !m.IsAbstract &&
-                !(m.IsStatic && m.IsConstructor);
-        }
-
 
         private static MethodDefinition CreateCallToPrivateCtor(MethodDefinition defCtor, TypeDefinition prototypeType)
         {
@@ -184,6 +174,7 @@ namespace Mice
 
             MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
             result.SemanticsAttributes = method.SemanticsAttributes;
+
             result.IsRuntimeSpecialName = false;
             result.IsVirtual = false;
             if (method.IsConstructor)
@@ -193,66 +184,12 @@ namespace Mice
             {
                 result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
             }
-            foreach (var variable in method.Body.Variables)
-            {
-                result.Body.Variables.Add(new VariableDefinition(variable.Name, variable.VariableType));
-            }
 
-            var il = result.Body.GetILProcessor();
-            foreach (var inst in method.Body.Instructions)
-            {
-                Instruction newInst;
-                if (inst.Operand == null)
-                    newInst = il.Create(inst.OpCode);
-                else if (inst.Operand is TypeReference)
-                    newInst = il.Create(inst.OpCode, inst.Operand as TypeReference);
-                else if (inst.Operand is CallSite)
-                    newInst = il.Create(inst.OpCode, inst.Operand as CallSite);
-                else if (inst.Operand is MethodReference)
-                    newInst = il.Create(inst.OpCode, inst.Operand as MethodReference);
-                else if (inst.Operand is FieldReference)
-                    newInst = il.Create(inst.OpCode, inst.Operand as FieldReference);
-                else if (inst.Operand is string)
-                    newInst = il.Create(inst.OpCode, inst.Operand as string);
-                else if (inst.Operand is sbyte)
-                    newInst = il.Create(inst.OpCode, (sbyte)inst.Operand);
-                else if (inst.Operand is byte)
-                    newInst = il.Create(inst.OpCode, (byte)inst.Operand);
-                else if (inst.Operand is int)
-                    newInst = il.Create(inst.OpCode, (int)inst.Operand);
-                else if (inst.Operand is long)
-                    newInst = il.Create(inst.OpCode, (long)inst.Operand);
-                else if (inst.Operand is float)
-                    newInst = il.Create(inst.OpCode, (float)inst.Operand);
-                else if (inst.Operand is double)
-                    newInst = il.Create(inst.OpCode, (double)inst.Operand);
-                else if (inst.Operand is Instruction)
-                    newInst = il.Create(inst.OpCode, (Instruction)inst.Operand);
-                else if (inst.Operand is Instruction[])
-                    newInst = il.Create(inst.OpCode, (Instruction[])inst.Operand);
-                else if (inst.Operand is VariableDefinition)
-                    newInst = il.Create(inst.OpCode, (VariableDefinition)inst.Operand);
-                else if (inst.Operand is ParameterDefinition)
-                    newInst = il.Create(inst.OpCode, (ParameterDefinition)inst.Operand);
-                else
-                    throw new NotSupportedException();
+            //copy method's body to x-method           
+            result.Body = method.Body;
+            method.Body = new MethodBody(method);
 
-                il.Append(newInst);
-            }
-
-            foreach (var exHandler in method.Body.ExceptionHandlers)
-            {
-                result.Body.ExceptionHandlers.Add(new ExceptionHandler(exHandler.HandlerType)
-                {
-                    CatchType = exHandler.CatchType,
-                    FilterStart = exHandler.FilterStart,
-                    HandlerEnd = exHandler.HandlerEnd,
-                    HandlerStart = exHandler.HandlerStart,
-                    TryEnd = exHandler.TryEnd,
-                    TryStart = exHandler.TryStart
-                });
-            }
-
+            //add x-method to a type
             method.DeclaringType.Methods.Add(result);
 
             //registering a property if it's needed
@@ -270,21 +207,17 @@ namespace Mice
                     property.GetMethod = result;
                 else
                     property.SetMethod = result;
-
             }
 
             //repalce old method body
-            method.Body.Instructions.Clear();
-            method.Body.Variables.Clear();
-            method.Body.ExceptionHandlers.Clear();
+            //var il = method.Body.GetILProcessor();
 
-            il = method.Body.GetILProcessor();
-            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-            for (int i = 0; i < allParamsCount; i++)
-                il.Emit(OpCodes.Ldarg, i);
+            //int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
+            //for (int i = 0; i < allParamsCount; i++)
+            //    il.Emit(OpCodes.Ldarg, i);
 
-            il.Emit(OpCodes.Call, result);
-            il.Emit(OpCodes.Ret);
+            //il.Emit(OpCodes.Call, result);
+            //il.Emit(OpCodes.Ret);
             return result;
         }
 
@@ -356,25 +289,27 @@ namespace Mice
                 TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.BeforeFieldInit | TypeAttributes.SequentialLayout,
                 type.Module.Import(typeof(ValueType)));
 
-            MakeGenericType(type, result);
             type.NestedTypes.Add(result);
             result.DeclaringType = type;
-
+            MakeGenericType(result);
             return result;
         }
 
-        private static FieldDefinition CreateDeligateField(TypeDefinition hostType, MethodDefinition method, TypeDefinition delegateType, bool includeParamsToName)
+        private static FieldDefinition CreateDeligateField(MethodDefinition method)
         {
-            var fieldName = ComposeFullMethodName(method, includeParamsToName);
+            var fieldName = ComposeFullMethodName(method);
+            var delegateType = method.DeclaringType.NestedTypes.First(m => m.Name == "PrototypeClass").
+                NestedTypes.First(m => m.Name == "Callback_" + fieldName);
             FieldDefinition field = new FieldDefinition(fieldName, FieldAttributes.Public, delegateType);
-            MakeGenericField(delegateType, field);
-            hostType.Fields.Add(field);
+            method.DeclaringType.Fields.Add(field);
+            MakeGenericField(field);
             return field;
         }
 
-        private static TypeDefinition CreateDeligateType(MethodDefinition method, TypeDefinition parentType, bool includeParamsToName)
+        private static TypeDefinition CreateDeligateType(MethodDefinition method)
         {
-            string deligateName = "Callback_" + ComposeFullMethodName(method, includeParamsToName);
+            string deligateName = "Callback_" + ComposeFullMethodName(method);
+            var parentType = method.DeclaringType.NestedTypes.First(m=>m.Name=="PrototypeClass");
 
             TypeReference multicastDeligateType = parentType.Module.Import(typeof(MulticastDelegate));
             TypeReference voidType = parentType.Module.Import(typeof(void));
@@ -405,17 +340,12 @@ namespace Mice
                 if (method.DeclaringType.HasGenericParameters)
                 {
 
-                    ParameterDefinition param = new ParameterDefinition("self", ParameterAttributes.None,method.DeclaringType);
-                    param.Attributes = ParameterAttributes.None;
-
-                    var x = param.ParameterType.GenericParameters[0];
-                    var y = new GenericParameter("V", type);
-                                            
-                    //param.ParameterType.GenericParameters.Add(y);
+                    ParameterDefinition param = new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType);
                     param.ParameterType = new GenericInstanceType(param.ParameterType);
-                    ((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(x);
-                    //param.ParameterType = new GenericInstanceType(param.ParameterType);
-                    //((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(x);
+
+                    foreach (var genericParam in method.DeclaringType.GenericParameters)
+                        ((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(genericParam);
+
                     invoke.Parameters.Add(param);
                 }
                 else
@@ -429,17 +359,18 @@ namespace Mice
             }
             result.Methods.Add(invoke);
 
-
             //the rest of the process
-            MakeGenericType(parentType, result);
             result.DeclaringType = parentType;
             parentType.NestedTypes.Add(result);
+            MakeGenericType(result);
             return result;
         }
 
+        #region helpers
 
-        private static string ComposeFullMethodName(MethodDefinition method, bool includeParamsToName)
+        private static string ComposeFullMethodName(MethodDefinition method)
         {
+            bool includeParamsToName = method.DeclaringType.Methods.Where(m => m.Name == method.Name).Count() > 1;
             var @params = method.Parameters.Select(p =>
             {
                 if (p.ParameterType.IsArray)
@@ -457,31 +388,32 @@ namespace Mice
             if (includeParamsToName)
                 partsOfName = partsOfName.Concat(@params);
 
-            //TODO: prettify that shit
-            if (method.DeclaringType.HasGenericParameters)
-                return string.Join("_", partsOfName.ToArray()).Replace('`', '_');
-            else
-                return string.Join("_", partsOfName.ToArray());
+            return string.Join("_", partsOfName.ToArray()).Replace('`', '_');
         }
 
-        private static void MakeGenericType(TypeReference type, IGenericParameterProvider result)
+        private static void MakeGenericType(TypeReference type)
         {
-            if (type.HasGenericParameters)
+            if (type.DeclaringType.HasGenericParameters)
             {
-                foreach (var ParentGenericParam in type.GenericParameters)
-                    result.GenericParameters.Add(new GenericParameter(ParentGenericParam.FullName, result));
+                foreach (var parentGenericParam in type.DeclaringType.GenericParameters)
+                    type.GenericParameters.Add(new GenericParameter(parentGenericParam.Name, type));
             }
         }
 
-        private static void MakeGenericField(TypeReference prototypeType, FieldDefinition staticPrototypeField)
+        private static void MakeGenericField(FieldDefinition field)
         {
+            var prototypeType = field.DeclaringType;
             if (prototypeType.HasGenericParameters)
             {
                 var proto = new GenericInstanceType(prototypeType);
-                proto.GenericArguments.Add(prototypeType.GenericParameters[0]);
-                staticPrototypeField.FieldType = proto;
+                foreach(var param in prototypeType.GenericParameters)
+                {
+                    proto.GenericArguments.Add(param);
+                }
+                field.FieldType = proto;
             }
         }
 
+        #endregion
     }
 }

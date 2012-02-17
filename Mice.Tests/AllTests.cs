@@ -207,19 +207,5 @@ namespace Mice.Tests
             d.AddPatients(new[] {d});
             Assert.That(wasCalled);
         }
-
-        [Test]
-        public void GenericsTest()
-        {
-            GenericStorage<int>.StaticPrototype = new GenericStorage<int>.PrototypeClass();
-            GenericStorage<int>.PrototypeClass.Callback_IntroduceItselfStatic a;
-            GenericStorage<int>.PrototypeClass.Callback_IntroduceItself b;
-
-            //GenericStorage<int>.InnerStruct
-            //GenericStorage<int>.StaticPrototype.IntroduceItself = self => "sdf";
-
-            GenericStorage<int>.InnerStructStaticSample = new GenericStorage<int>.InnerStruct();
-            GenericStorage<int>.InnerStructStaticSample.IntroduceItselfImpl = (self) => "sdf";
-        }
     }
 }

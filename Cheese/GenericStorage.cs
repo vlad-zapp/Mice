@@ -18,9 +18,14 @@ namespace Cheese
             Data = initial_value;
         }
 
+        public string Greeting()
+        {
+            return IntroduceItself();
+        }
+
         public string IntroduceItself()
         {
-            return String.Format("Hello, i am {0}", typeof(T).ToString());
+            return IntroduceItself("Hello, i am");
         }
 
         public string IntroduceItself(string greeting)
@@ -32,8 +37,5 @@ namespace Cheese
         {
             return "Hi i am just a static method";
         }
-
-        public delegate string IntroduceItselfDelegate(GenericStorage<T> self);
-        public IntroduceItselfDelegate IntroduceItselfImpl;
     }
 }
