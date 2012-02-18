@@ -16,7 +16,13 @@ namespace Mice.Tests
         public void GenericsSimpleTests()
         {
             GenericStorage<int> a = new GenericStorage<int>(10);
-            a.IntroduceItself("hello");
+            string[] strs = {
+                           a.IntroduceItself(),
+                           a.IntroduceItself("Hello, i am"),
+                           a.xIntroduceItself(),
+                           a.xIntroduceItself("Hello, i am")
+                       };
+            Assert.That(strs.All(s=>s=="Hello, i am System.Int32"));
         }
     }
 }

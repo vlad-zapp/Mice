@@ -30,7 +30,7 @@ namespace Cheese
 
         public string IntroduceItself(string greeting)
         {
-            return String.Format("{1} {0}", greeting, typeof(T).ToString());
+            return String.Format("{0} {1}", greeting, typeof(T).ToString());
         }
 
         public static string IntroduceItselfStatic()
