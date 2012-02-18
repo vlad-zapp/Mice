@@ -90,7 +90,7 @@ namespace Mice
                     CreateDeligateType(method);
                     CreateDeligateField(method);
 
-                    //MethodDefinition newMethod = MoveCodeToImplMethod(method);
+                    MethodDefinition newMethod = MoveCodeToImplMethod(method);
 
                     //AddStaticPrototypeCall(method, delegateField, staticPrototypeField);
 
@@ -210,14 +210,14 @@ namespace Mice
             }
 
             //repalce old method body
-            //var il = method.Body.GetILProcessor();
+            var il = method.Body.GetILProcessor();
 
-            //int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-            //for (int i = 0; i < allParamsCount; i++)
-            //    il.Emit(OpCodes.Ldarg, i);
+            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
+            for (int i = 0; i < allParamsCount; i++)
+                il.Emit(OpCodes.Ldarg, i);
 
-            //il.Emit(OpCodes.Call, result);
-            //il.Emit(OpCodes.Ret);
+            il.Emit(OpCodes.Call, result);
+            il.Emit(OpCodes.Ret);
             return result;
         }
 
