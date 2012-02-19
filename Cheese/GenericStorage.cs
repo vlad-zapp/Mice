@@ -37,5 +37,6 @@ namespace Cheese
         {
             return "Hi i am just a static method";
         }
+
     }
 }

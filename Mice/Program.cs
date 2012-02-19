@@ -86,24 +86,22 @@ namespace Mice
             var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
             foreach (var method in processingMethods)
             {
-                if (!(method.IsConstructor || method.IsGetter || method.IsSetter))
+
+                CreateDeligateType(method);
+                CreateDeligateField(method);
+
+                MethodDefinition newMethod = MoveCodeToImplMethod(method);
+
+                //AddStaticPrototypeCall(method);
+
+                if (!method.IsStatic)
                 {
-                    CreateDeligateType(method);
-                    CreateDeligateField(method);
-
-                    MethodDefinition newMethod = MoveCodeToImplMethod(method);
-
-                    //AddStaticPrototypeCall(method, delegateField, staticPrototypeField);
-
-                    if (!method.IsStatic)
-                    {
-                        //AddInstancePrototypeCall(method, delegateField, prototypeField);
-                    }
+                    //AddInstancePrototypeCall(method);
                 }
             }
 
-            if (type.HasGenericParameters) return; //generics processing stop here))
-
+            //generics processing stop here))
+            return;
             //After using of Mice there always should be a wasy to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
             if (!type.IsAbstract)
@@ -117,7 +115,7 @@ namespace Mice
                     var delegateField = CreateDeligateField(privateDefaultCtor);
 
                     MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
-                    AddStaticPrototypeCall(privateDefaultCtor, delegateField, staticPrototypeField);
+                    AddStaticPrototypeCall(privateDefaultCtor);
 
                     CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
                 }
@@ -134,6 +132,18 @@ namespace Mice
             }
         }
 
+        private static TypeDefinition CreatePrototypeType(TypeDefinition type)
+        {
+            TypeDefinition result = new TypeDefinition(null, "PrototypeClass",
+                TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.BeforeFieldInit | TypeAttributes.SequentialLayout,
+                type.Module.Import(typeof(ValueType)));
+
+            type.NestedTypes.Add(result);
+            result.DeclaringType = type;
+            MakeGenericType(result);
+            return result;
+        }
+
         private static MethodDefinition CreateDefaultCtor(TypeDefinition type)
         {
             //create constructor
@@ -146,7 +156,6 @@ namespace Mice
 
             return constructor;
         }
-
 
         private static MethodDefinition CreateCallToPrivateCtor(MethodDefinition defCtor, TypeDefinition prototypeType)
         {
@@ -198,7 +207,7 @@ namespace Mice
             {
                 TypeReference propertyType = result.IsGetter ? result.ReturnType : result.Parameters[0].ParameterType;
                 string propertyName = result.Name.Substring(4);
-                var property = method.DeclaringType.Properties.FirstOrDefault(p => p.Name == propertyName);
+                var property = method.DeclaringType.Properties.SingleOrDefault(p => p.Name == propertyName);
                 if (property == null)
                 {
                     property = new PropertyDefinition(propertyName, PropertyAttributes.None, propertyType);
@@ -218,15 +227,19 @@ namespace Mice
                 il.Emit(OpCodes.Ldarg, i);
 
             //result.MakeGeneric(method.DeclaringType.GenericParameters);
-            il.Emit(OpCodes.Call, result.DeclaringType.HasGenericParameters?result.MakeGeneric(method.DeclaringType.GenericParameters):result);
+            il.Emit(OpCodes.Call, result.DeclaringType.HasGenericParameters ? result.MakeGeneric(method.DeclaringType.GenericParameters) : result);
 
             il.Emit(OpCodes.Ret);
             return result;
         }
 
-        private static void AddStaticPrototypeCall(MethodDefinition method, FieldDefinition delegateField, FieldDefinition prototypeField)
+        private static void AddStaticPrototypeCall(MethodDefinition method)
         {
-            Debug.Assert(prototypeField.IsStatic);
+            var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
+            var delegateField =
+                method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").
+                Fields.Single(m => m.Name == ComposeFullMethodName(method));
+            
             var firstOpcode = method.Body.Instructions.First();
             var il = method.Body.GetILProcessor();
 
@@ -254,9 +267,12 @@ namespace Mice
                 il.InsertBefore(firstOpcode, instruction);
         }
 
-        private static void AddInstancePrototypeCall(MethodDefinition method, FieldDefinition delegateField, FieldDefinition prototypeField)
+        private static void AddInstancePrototypeCall(MethodDefinition method)
         {
-            Debug.Assert(!prototypeField.IsStatic);
+            var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
+            var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
+            var delegateField = parentClass.Fields.Single(m => m.Name == ComposeFullMethodName(method));
+
             var firstOpcode = method.Body.Instructions.First();
             var il = method.Body.GetILProcessor();
 
@@ -286,33 +302,22 @@ namespace Mice
                 il.InsertBefore(firstOpcode, instruction);
         }
 
-        private static TypeDefinition CreatePrototypeType(TypeDefinition type)
-        {
-            TypeDefinition result = new TypeDefinition(null, "PrototypeClass",
-                TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.BeforeFieldInit | TypeAttributes.SequentialLayout,
-                type.Module.Import(typeof(ValueType)));
-
-            type.NestedTypes.Add(result);
-            result.DeclaringType = type;
-            MakeGenericType(result);
-            return result;
-        }
-
         private static FieldDefinition CreateDeligateField(MethodDefinition method)
         {
             var fieldName = ComposeFullMethodName(method);
-            var delegateType = method.DeclaringType.NestedTypes.First(m => m.Name == "PrototypeClass").
-                NestedTypes.First(m => m.Name == "Callback_" + fieldName);
+            var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
+            var delegateType = parentClass.NestedTypes.Single(m => m.Name == "Callback_" + fieldName);
+
             FieldDefinition field = new FieldDefinition(fieldName, FieldAttributes.Public, delegateType);
-            method.DeclaringType.Fields.Add(field);
-            MakeGenericField(field);
+            parentClass.Fields.Add(field);
+            MakeGenericField(field,delegateType);
             return field;
         }
 
         private static TypeDefinition CreateDeligateType(MethodDefinition method)
         {
             string deligateName = "Callback_" + ComposeFullMethodName(method);
-            var parentType = method.DeclaringType.NestedTypes.First(m => m.Name == "PrototypeClass");
+            var parentType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 
             TypeReference multicastDeligateType = parentType.Module.Import(typeof(MulticastDelegate));
             TypeReference voidType = parentType.Module.Import(typeof(void));
@@ -403,9 +408,11 @@ namespace Mice
             }
         }
 
-        private static void MakeGenericField(FieldDefinition field)
+        private static void MakeGenericField(FieldDefinition field, TypeDefinition prototypeType=null)
         {
-            var prototypeType = field.DeclaringType;
+            if (prototypeType==null) 
+                prototypeType=field.DeclaringType;
+
             if (prototypeType.HasGenericParameters)
             {
                 var proto = new GenericInstanceType(prototypeType);
@@ -419,7 +426,7 @@ namespace Mice
 
         #endregion
 
-        #region cecil-addons
+        #region cecil addons
 
         public static TypeReference MakeGenericType(this TypeReference self, ICollection<GenericParameter> arguments)
         {
