@@ -38,5 +38,10 @@ namespace Cheese
             return "Hi i am just a static method";
         }
 
+        //public struct nestedStruct
+        //{
+        //    public delegate string hi();
+        //    public hi hi_impl;
+        //}
     }
 }

@@ -74,13 +74,13 @@ namespace Mice
         {
             TypeDefinition prototypeType = CreatePrototypeType(type);
 
-            FieldDefinition prototypeField = new FieldDefinition(type.Name.Replace('`', '_') + "Prototype", FieldAttributes.Public, prototypeType);
+            FieldDefinition prototypeField = new FieldDefinition(type.Name.Replace('`', '_') + "Prototype", FieldAttributes.Public, prototypeType.Instance());
             type.Fields.Add(prototypeField);
-            MakeGenericField(prototypeField);
+            
 
-            FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType);
+            FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType.Instance());
             type.Fields.Add(staticPrototypeField);
-            MakeGenericField(staticPrototypeField);
+            
 
             //create delegate types & fields, patch methods to call delegates
             var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
@@ -138,9 +138,9 @@ namespace Mice
                 TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.BeforeFieldInit | TypeAttributes.SequentialLayout,
                 type.Module.Import(typeof(ValueType)));
 
+            result.ImportGenericParams(type);
             type.NestedTypes.Add(result);
             result.DeclaringType = type;
-            MakeGenericType(result);
             return result;
         }
 
@@ -183,6 +183,7 @@ namespace Mice
                 name = realImplementationPrefix + method.Name;
 
             MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
+            
             result.SemanticsAttributes = method.SemanticsAttributes;
 
             result.IsRuntimeSpecialName = false;
@@ -226,8 +227,13 @@ namespace Mice
             for (int i = 0; i < allParamsCount; i++)
                 il.Emit(OpCodes.Ldarg, i);
 
-            //result.MakeGeneric(method.DeclaringType.GenericParameters);
-            il.Emit(OpCodes.Call, result.DeclaringType.HasGenericParameters ? result.MakeGeneric(method.DeclaringType.GenericParameters) : result);
+            if (result.DeclaringType.HasGenericParameters)
+            {
+                il.Emit(OpCodes.Call, result.Instance());
+            } else
+            {
+                il.Emit(OpCodes.Call, result);
+            }
 
             il.Emit(OpCodes.Ret);
             return result;
@@ -246,7 +252,7 @@ namespace Mice
             TypeDefinition delegateType = delegateField.FieldType.Resolve();
             var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
             int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-
+            
             var instructions = new[]
 			{
 				il.Create(OpCodes.Ldsflda, prototypeField),
@@ -308,9 +314,9 @@ namespace Mice
             var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
             var delegateType = parentClass.NestedTypes.Single(m => m.Name == "Callback_" + fieldName);
 
-            FieldDefinition field = new FieldDefinition(fieldName, FieldAttributes.Public, delegateType);
+            FieldDefinition field = new FieldDefinition(fieldName, FieldAttributes.Public, delegateType.Instance());
             parentClass.Fields.Add(field);
-            MakeGenericField(field,delegateType);
+
             return field;
         }
 
@@ -368,9 +374,9 @@ namespace Mice
             result.Methods.Add(invoke);
 
             //the rest of the process
+            result.ImportGenericParams(parentType);
             result.DeclaringType = parentType;
             parentType.NestedTypes.Add(result);
-            MakeGenericType(result);
             return result;
         }
 
@@ -399,68 +405,39 @@ namespace Mice
             return string.Join("_", partsOfName.ToArray()).Replace('`', '_');
         }
 
-        private static void MakeGenericType(TypeReference type)
+        private static void ImportGenericParams(this TypeReference type, TypeReference source)
         {
-            if (type.DeclaringType.HasGenericParameters)
+            if (source.HasGenericParameters)
             {
-                foreach (var parentGenericParam in type.DeclaringType.GenericParameters)
+                foreach (var parentGenericParam in source.GenericParameters)
                     type.GenericParameters.Add(new GenericParameter(parentGenericParam.Name, type));
             }
         }
 
-        private static void MakeGenericField(FieldDefinition field, TypeDefinition prototypeType=null)
+        private static void ImportGenericArgs(this FieldDefinition field, TypeReference source)
         {
-            if (prototypeType==null) 
-                prototypeType=field.DeclaringType;
-
-            if (prototypeType.HasGenericParameters)
+            if (source.HasGenericParameters)
             {
-                var proto = new GenericInstanceType(prototypeType);
-                foreach (var param in prototypeType.GenericParameters)
-                {
-                    proto.GenericArguments.Add(param);
-                }
-                field.FieldType = proto;
+                field.FieldType=((TypeDefinition) field.FieldType).Instance();
             }
         }
 
-        #endregion
-
-        #region cecil addons
-
-        public static TypeReference MakeGenericType(this TypeReference self, ICollection<GenericParameter> arguments)
+        private static TypeReference Instance(this TypeDefinition self)
         {
-            if (self.GenericParameters.Count != arguments.Count)
-                throw new ArgumentException();
-
             var instance = new GenericInstanceType(self);
-            foreach (var argument in arguments)
+            foreach (var argument in self.GenericParameters)
                 instance.GenericArguments.Add(argument);
-
             return instance;
         }
 
-        public static MethodReference MakeGenericMethod(this MethodReference self, ICollection<GenericParameter> arguments)
+        public static MethodReference Instance(this MethodDefinition self)
         {
-            if (self.GenericParameters.Count != arguments.Count)
-                throw new ArgumentException();
-
-            var instance = new GenericInstanceMethod(self);
-            foreach (var argument in arguments)
-                instance.GenericArguments.Add(argument);
-
-            return instance;
-        }
-
-        public static MethodReference MakeGeneric(this MethodReference self, ICollection<GenericParameter> arguments)
-        {
+            var arguments = self.DeclaringType.GenericParameters;
             var reference = new MethodReference(self.Name, self.ReturnType,
-                                                self.DeclaringType.MakeGenericType(arguments));
+                                                self.DeclaringType.Instance());
             reference.HasThis = self.HasThis;
             reference.ExplicitThis = self.ExplicitThis;
             reference.CallingConvention = self.CallingConvention;
-
-            //reference.DeclaringType.GenericParameters.Add(new GenericParameter("T",arguments[0]));
 
             foreach (var parameter in self.Parameters)
                 reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
@@ -471,10 +448,38 @@ namespace Mice
             return reference;
         }
 
-        public static FieldReference MakeGeneric(this FieldReference self, ICollection<GenericParameter> arguments)
-        {
-            return new FieldReference(self.Name, self.FieldType, self.DeclaringType.MakeGenericType(arguments));
-        }
+        #endregion
+
+        #region cecil addons (temprorary obsolete :)
+
+        //public static TypeReference MakeGenericType(this TypeReference self, ICollection<GenericParameter> arguments)
+        //{
+        //    if (self.GenericParameters.Count != arguments.Count)
+        //        throw new ArgumentException();
+
+        //    var instance = new GenericInstanceType(self);
+        //        foreach (var argument in arguments)
+        //        instance.GenericArguments.Add(argument);
+
+        //    return instance;
+        //}
+
+        //public static MethodReference MakeGenericMethod(this MethodReference self, ICollection<GenericParameter> arguments)
+        //{
+        //    if (self.GenericParameters.Count != arguments.Count)
+        //        throw new ArgumentException();
+
+        //    var instance = new GenericInstanceMethod(self);
+        //    foreach (var argument in arguments)
+        //        instance.GenericArguments.Add(argument);
+
+        //    return instance;
+        //}
+
+        //public static FieldReference MakeGeneric(this FieldReference self, ICollection<GenericParameter> arguments)
+        //{
+        //    return new FieldReference(self.Name, self.FieldType, self.DeclaringType.MakeGenericType(arguments));
+        //}
 
         #endregion
     }
