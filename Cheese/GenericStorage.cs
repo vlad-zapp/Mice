@@ -44,26 +44,17 @@ namespace Cheese
             return "Hi i am just a static method";
         }
 
+
         public string MakeItString<S>(S item)
         {
             return item.ToString();
         }
 
-        //public struct nestedStruct
-        //{
-        //    public delegate string hi(string a);
-        //    public hi hi_impl;
-        //}
+        public struct nestedStruct
+        {
+            public delegate string MakeItstring<S>(S item);
+        }
 
-        //public nestedStruct nestedInstance;
- 
-        //public void call_hi(string a)
-        //{
-        //    if(nestedInstance.hi_impl != null)
-        //    {
-        //        nestedInstance.hi_impl(a);
-        //        return;
-        //    }
-        //}
+        public nestedStruct nestedInstance;
     }
 }

@@ -76,42 +76,47 @@ namespace Mice
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
             
             //temprorary disabled
-            if (!type.IsAbstract)
-            {
-                var privateDefaultCtor =
-                    type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
+            //if (!type.IsAbstract)
+            //{
+            //    var privateDefaultCtor =
+            //        type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
 
-                var publicDefaultCtor =
-                        type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
+            //    var publicDefaultCtor =
+            //            type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
 
-                if (privateDefaultCtor != null)
-                {
-                    //TODO:gona make it public. later
-                    CreateDeligateType(privateDefaultCtor);
-                    CreateDeligateField(privateDefaultCtor);
+            //    if (privateDefaultCtor != null)
+            //    {
+            //        //TODO:gona make it public. later
+            //        CreateDeligateType(privateDefaultCtor);
+            //        CreateDeligateField(privateDefaultCtor);
 
-                    MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
+            //        MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
 
-                    AddStaticPrototypeCall(privateDefaultCtor);
-                    CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
-                }
-                else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
-                {
-                    publicDefaultCtor = CreateDefaultCtor(type);
-                    //that is here only for compability with old tests
-                    //because now we create bulic constructor instead of private one
-                    CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
+            //        AddStaticPrototypeCall(privateDefaultCtor);
+            //        CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
+            //    }
+            //    else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
+            //    {
+            //        publicDefaultCtor = CreateDefaultCtor(type);
+            //        //that is here only for compability with old tests
+            //        //because now we create bulic constructor instead of private one
+            //        CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
 
-                }
-            }
+            //    }
+            //}
             
             //create delegate types & fields, patch methods to call delegates
             var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
             foreach (var method in processingMethods)
             {
                 CreateDeligateType(method);
+
+                //the end for methods with generics for now
                 if (method.HasGenericParameters) return;
+                
                 CreateDeligateField(method);
+
+
 
                 MethodDefinition newMethod = MoveCodeToImplMethod(method);
 
@@ -185,6 +190,10 @@ namespace Mice
             TypeDefinition result = new TypeDefinition(null, deligateName,
                 TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.RTSpecialName, multicastDeligateType);
 
+            result.ImportGenericParams(parentType);
+            if(method.HasGenericParameters)
+                result.ImportGenericParams(method);
+
             //create constructor
             var constructor = new MethodDefinition(".ctor",
                                                    MethodAttributes.Public | MethodAttributes.CompilerControlled |
@@ -194,7 +203,6 @@ namespace Mice
             constructor.Parameters.Add(new ParameterDefinition("method", ParameterAttributes.None, intPtrType));
             constructor.IsRuntime = true;
             result.Methods.Add(constructor);
-
 
             //create Invoke
             var invoke = new MethodDefinition("Invoke",
@@ -208,13 +216,18 @@ namespace Mice
 
             foreach (var param in method.Parameters)
             {
-                invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
+                if (param.ParameterType.IsGenericParameter && !method.IsConstructor)
+                {
+                    //TODO: remake this
+                    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m=>m.Name==param.ParameterType.Name)));
+                }
+                else
+                    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
             }
-            
-            result.Methods.Add(invoke);
 
+            result.Methods.Add(invoke);
+           
             //the rest of the process
-            result.ImportGenericParams(parentType);
             result.DeclaringType = parentType;
             parentType.NestedTypes.Add(result);
             return result;
@@ -387,6 +400,15 @@ namespace Mice
         }
 
         private static void ImportGenericParams(this TypeDefinition type, TypeReference source)
+        {
+            if (source.HasGenericParameters)
+            {
+                foreach (var parentGenericParam in source.GenericParameters)
+                    type.GenericParameters.Add(new GenericParameter(parentGenericParam.Name, type));
+            }
+        }
+
+        private static void ImportGenericParams(this TypeDefinition type, MethodReference source)
         {
             if (source.HasGenericParameters)
             {
