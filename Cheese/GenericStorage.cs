@@ -44,6 +44,11 @@ namespace Cheese
             return "Hi i am just a static method";
         }
 
+        public string MakeItString<S>(S item)
+        {
+            return item.ToString();
+        }
+
         //public struct nestedStruct
         //{
         //    public delegate string hi(string a);

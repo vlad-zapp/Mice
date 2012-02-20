@@ -19,8 +19,8 @@ namespace Mice
             string victimName = args[0];
             string keyFile = args.Length > 1 ? args[1] : null;
 
-            try
-            {
+            //try
+            //{
                 var assembly = AssemblyDefinition.ReadAssembly(victimName);
                 foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
                     ProcessType(type);
@@ -31,14 +31,15 @@ namespace Mice
 
                 assembly.Write(victimName, writerParams);
                 return 0;
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine("Error. " + e.ToString());
-                Console.ReadKey();
-                return 1;
-            }
+            //}
+            //catch (Exception e)
+            //{
+            //    Console.WriteLine("Error. " + e.ToString());
+            //    Console.ReadKey();
+            //    return 1;
+            //}
         }
+        
         private static int Using()
         {
             Console.WriteLine("Usage: mice.exe assembly-name.dll [key-file.snk]");
@@ -57,7 +58,6 @@ namespace Mice
         private static bool IsMethodToBeProcessed(MethodDefinition m)
         {
             return (m.IsPublic) &&
-                //m.GenericParameters.Count == 0 &&
                 !m.IsAbstract &&
                 !(m.IsStatic && m.IsConstructor);
         }
@@ -71,26 +71,11 @@ namespace Mice
 
             FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType.Instance());
             type.Fields.Add(staticPrototypeField);
-
-            //create delegate types & fields, patch methods to call delegates
-            var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
-            foreach (var method in processingMethods)
-            {
-                CreateDeligateType(method);
-                CreateDeligateField(method);
-
-                MethodDefinition newMethod = MoveCodeToImplMethod(method);
-
-                AddStaticPrototypeCall(method);
-
-                if (!method.IsStatic)
-                {
-                    AddInstancePrototypeCall(method);
-                }
-            }
-
+            
             //After using of Mice there always should be a way to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
+            
+            //temprorary disabled
             if (!type.IsAbstract)
             {
                 var privateDefaultCtor =
@@ -101,17 +86,40 @@ namespace Mice
 
                 if (privateDefaultCtor != null)
                 {
+                    //TODO:gona make it public. later
                     CreateDeligateType(privateDefaultCtor);
                     CreateDeligateField(privateDefaultCtor);
+
                     MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
-                    
+
                     AddStaticPrototypeCall(privateDefaultCtor);
                     CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
                 }
                 else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
                 {
-                    privateDefaultCtor = CreateDefaultCtor(type);
-                    CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
+                    publicDefaultCtor = CreateDefaultCtor(type);
+                    //that is here only for compability with old tests
+                    //because now we create bulic constructor instead of private one
+                    CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
+
+                }
+            }
+            
+            //create delegate types & fields, patch methods to call delegates
+            var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
+            foreach (var method in processingMethods)
+            {
+                CreateDeligateType(method);
+                if (method.HasGenericParameters) return;
+                CreateDeligateField(method);
+
+                MethodDefinition newMethod = MoveCodeToImplMethod(method);
+
+                AddStaticPrototypeCall(method);
+
+                if (!method.IsStatic)
+                {
+                    AddInstancePrototypeCall(method);
                 }
             }
         }
@@ -132,12 +140,11 @@ namespace Mice
         {
             //create constructor
             var constructor = new MethodDefinition(".ctor",
-                MethodAttributes.Private | MethodAttributes.CompilerControlled |
+                MethodAttributes.Public | MethodAttributes.CompilerControlled |
                 MethodAttributes.RTSpecialName | MethodAttributes.SpecialName |
                 MethodAttributes.HideBySig, type.Module.Import(typeof(void)));
             type.Methods.Add(constructor);
             constructor.Body.GetILProcessor().Emit(OpCodes.Ret);
-
             return constructor;
         }
 
@@ -196,26 +203,14 @@ namespace Mice
             invoke.IsRuntime = true;
             if (!method.IsStatic)
             {
-                if (method.DeclaringType.HasGenericParameters)
-                {
-
-                    ParameterDefinition param = new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType);
-                    param.ParameterType = new GenericInstanceType(param.ParameterType);
-
-                    foreach (var genericParam in method.DeclaringType.GenericParameters)
-                        ((GenericInstanceType)(param.ParameterType)).GenericArguments.Add(genericParam);
-
-                    invoke.Parameters.Add(param);
-                }
-                else
-                {
-                    invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType));
-                }
+                invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType.Instance()));
             }
+
             foreach (var param in method.Parameters)
             {
                 invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
             }
+            
             result.Methods.Add(invoke);
 
             //the rest of the process
@@ -239,13 +234,6 @@ namespace Mice
             TypeDefinition delegateType = delegateField.FieldType.Resolve();
             var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
             int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-
-            if (method.DeclaringType.HasGenericParameters)
-            {
-                //prototypeField.ImportGenericArgs(prototypeField.DeclaringType);
-                //prototypeField.FieldType.ImportGenericParams(prototypeField.DeclaringType);
-                //stopped here
-            }
 
             var instructions = new[]
 			{
@@ -407,13 +395,7 @@ namespace Mice
             }
         }
 
-        private static void ImportGenericArgs(this FieldDefinition field, TypeReference source)
-        {
-            if (source.HasGenericParameters)
-            {
-                ((TypeDefinition)field.FieldType).ImportGenericParams(source);
-            }
-        }
+        //Instance methods are used to convert *Definition -> *Reference
 
         private static TypeReference Instance(this TypeDefinition self)
         {

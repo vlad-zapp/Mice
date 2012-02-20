@@ -49,7 +49,6 @@
     <Compile Include="Civilian.cs" />
     <Compile Include="Doctor.cs" />
     <Compile Include="Exceptions.cs" />
-    <Compile Include="GenericBase.cs" />
     <Compile Include="GenericStorage.cs" />
     <Compile Include="Person.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
