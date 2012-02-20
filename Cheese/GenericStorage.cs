@@ -40,8 +40,19 @@ namespace Cheese
 
         //public struct nestedStruct
         //{
-        //    public delegate string hi();
+        //    public delegate string hi(string a);
         //    public hi hi_impl;
+        //}
+
+        //public nestedStruct nestedInstance;
+ 
+        //public void call_hi(string a)
+        //{
+        //    if(nestedInstance.hi_impl != null)
+        //    {
+        //        nestedInstance.hi_impl(a);
+        //        return;
+        //    }
         //}
     }
 }

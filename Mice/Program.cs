@@ -4,8 +4,6 @@ using System.Linq;
 using System.Text;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Mono.Cecil.Rocks;
-using System.Diagnostics;
 using StrongNameKeyPair = System.Reflection.StrongNameKeyPair;
 using System.IO;
 
@@ -76,33 +74,30 @@ namespace Mice
 
             FieldDefinition prototypeField = new FieldDefinition(type.Name.Replace('`', '_') + "Prototype", FieldAttributes.Public, prototypeType.Instance());
             type.Fields.Add(prototypeField);
-            
 
             FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType.Instance());
             type.Fields.Add(staticPrototypeField);
-            
 
             //create delegate types & fields, patch methods to call delegates
             var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
             foreach (var method in processingMethods)
             {
-
                 CreateDeligateType(method);
                 CreateDeligateField(method);
 
                 MethodDefinition newMethod = MoveCodeToImplMethod(method);
 
-                //AddStaticPrototypeCall(method);
+                AddStaticPrototypeCall(method);
 
                 if (!method.IsStatic)
                 {
-                    //AddInstancePrototypeCall(method);
+                    AddInstancePrototypeCall(method);
                 }
             }
 
             //generics processing stop here))
-            return;
-            //After using of Mice there always should be a wasy to create an instance of public class
+
+            //After using of Mice there always should be a way to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
             if (!type.IsAbstract)
             {
@@ -111,8 +106,8 @@ namespace Mice
 
                 if (privateDefaultCtor != null)
                 {
-                    var delegateType = CreateDeligateType(privateDefaultCtor);
-                    var delegateField = CreateDeligateField(privateDefaultCtor);
+                    CreateDeligateType(privateDefaultCtor);
+                    CreateDeligateField(privateDefaultCtor);
 
                     MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
                     AddStaticPrototypeCall(privateDefaultCtor);
@@ -144,6 +139,8 @@ namespace Mice
             return result;
         }
 
+        #region private defaul ctor
+
         private static MethodDefinition CreateDefaultCtor(TypeDefinition type)
         {
             //create constructor
@@ -169,144 +166,9 @@ namespace Mice
             return result;
         }
 
-        private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
-        {
-            const string realImplementationPrefix = "x";
-            string name;
-            if (method.IsConstructor)
-                name = realImplementationPrefix + "Ctor";
-            else if (method.IsSetter && method.Name.StartsWith("set_"))
-                name = "set_" + realImplementationPrefix + method.Name.Substring(4);
-            else if (method.IsGetter && method.Name.StartsWith("get_"))
-                name = "get_" + realImplementationPrefix + method.Name.Substring(4);
-            else
-                name = realImplementationPrefix + method.Name;
+        #endregion
 
-            MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
-            
-            result.SemanticsAttributes = method.SemanticsAttributes;
-
-            result.IsRuntimeSpecialName = false;
-            result.IsVirtual = false;
-            if (method.IsConstructor)
-                result.IsSpecialName = false;
-
-            foreach (var param in method.Parameters)
-            {
-                result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
-            }
-
-            //copy method's body to x-method           
-            result.Body = method.Body;
-            method.Body = new MethodBody(method);
-
-            //add x-method to a type
-            method.DeclaringType.Methods.Add(result);
-
-            //registering a property if it's needed
-            if (result.IsGetter || result.IsSetter)
-            {
-                TypeReference propertyType = result.IsGetter ? result.ReturnType : result.Parameters[0].ParameterType;
-                string propertyName = result.Name.Substring(4);
-                var property = method.DeclaringType.Properties.SingleOrDefault(p => p.Name == propertyName);
-                if (property == null)
-                {
-                    property = new PropertyDefinition(propertyName, PropertyAttributes.None, propertyType);
-                    method.DeclaringType.Properties.Add(property);
-                }
-                if (result.IsGetter)
-                    property.GetMethod = result;
-                else
-                    property.SetMethod = result;
-            }
-
-            //repalce old method body
-            var il = method.Body.GetILProcessor();
-
-            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-            for (int i = 0; i < allParamsCount; i++)
-                il.Emit(OpCodes.Ldarg, i);
-
-            if (result.DeclaringType.HasGenericParameters)
-            {
-                il.Emit(OpCodes.Call, result.Instance());
-            } else
-            {
-                il.Emit(OpCodes.Call, result);
-            }
-
-            il.Emit(OpCodes.Ret);
-            return result;
-        }
-
-        private static void AddStaticPrototypeCall(MethodDefinition method)
-        {
-            var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
-            var delegateField =
-                method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").
-                Fields.Single(m => m.Name == ComposeFullMethodName(method));
-            
-            var firstOpcode = method.Body.Instructions.First();
-            var il = method.Body.GetILProcessor();
-
-            TypeDefinition delegateType = delegateField.FieldType.Resolve();
-            var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
-            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-            
-            var instructions = new[]
-			{
-				il.Create(OpCodes.Ldsflda, prototypeField),
-				il.Create(OpCodes.Ldfld, delegateField),
-				il.Create(OpCodes.Brfalse, firstOpcode),
-
-				il.Create(OpCodes.Ldsflda, prototypeField),
-				il.Create(OpCodes.Ldfld, delegateField),
-			}.Concat(
-                Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
-            ).Concat(new[]
-			{
-				il.Create(OpCodes.Callvirt, invokeMethod),
-				il.Create(OpCodes.Ret),
-			});
-
-            foreach (var instruction in instructions)
-                il.InsertBefore(firstOpcode, instruction);
-        }
-
-        private static void AddInstancePrototypeCall(MethodDefinition method)
-        {
-            var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
-            var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
-            var delegateField = parentClass.Fields.Single(m => m.Name == ComposeFullMethodName(method));
-
-            var firstOpcode = method.Body.Instructions.First();
-            var il = method.Body.GetILProcessor();
-
-            TypeDefinition delegateType = delegateField.FieldType.Resolve();
-            var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
-            int allParamsCount = method.Parameters.Count + 1; //all params and this
-
-            var instructions = new[]
-			{
-				il.Create(OpCodes.Ldarg_0),
-				il.Create(OpCodes.Ldflda, prototypeField),
-				il.Create(OpCodes.Ldfld, delegateField),
-				il.Create(OpCodes.Brfalse, firstOpcode),
-
-				il.Create(OpCodes.Ldarg_0),
-				il.Create(OpCodes.Ldflda, prototypeField),
-				il.Create(OpCodes.Ldfld, delegateField),
-			}.Concat(
-                Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
-            ).Concat(new[]
-			{
-				il.Create(OpCodes.Callvirt, invokeMethod),
-				il.Create(OpCodes.Ret),
-			});
-
-            foreach (var instruction in instructions)
-                il.InsertBefore(firstOpcode, instruction);
-        }
+        #region methods proxofication
 
         private static FieldDefinition CreateDeligateField(MethodDefinition method)
         {
@@ -380,6 +242,156 @@ namespace Mice
             return result;
         }
 
+        private static void AddStaticPrototypeCall(MethodDefinition method)
+        {
+            var prototypeField =
+                method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
+            var delegateField =
+                method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").
+                Fields.Single(m => m.Name == ComposeFullMethodName(method));
+            
+            var firstOpcode = method.Body.Instructions.First();
+            var il = method.Body.GetILProcessor();
+
+            TypeDefinition delegateType = delegateField.FieldType.Resolve();
+            var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
+            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
+
+            if (method.DeclaringType.HasGenericParameters)
+            {
+                //prototypeField.ImportGenericArgs(prototypeField.DeclaringType);
+                //prototypeField.FieldType.ImportGenericParams(prototypeField.DeclaringType);
+                //stopped here
+            }
+
+            var instructions = new[]
+			{
+				il.Create(OpCodes.Ldsflda, prototypeField.Instance()),
+				il.Create(OpCodes.Ldfld, delegateField.Instance()),
+				il.Create(OpCodes.Brfalse, firstOpcode),
+
+				il.Create(OpCodes.Ldsflda, prototypeField.Instance()),
+				il.Create(OpCodes.Ldfld, delegateField.Instance()),
+			}.Concat(
+                Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
+            ).Concat(new[]
+			{
+				il.Create(OpCodes.Callvirt, invokeMethod.Instance()),
+				il.Create(OpCodes.Ret),
+			});
+
+            foreach (var instruction in instructions)
+                il.InsertBefore(firstOpcode, instruction);
+        }
+
+        private static void AddInstancePrototypeCall(MethodDefinition method)
+        {
+            var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
+            var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
+            var delegateField = parentClass.Fields.Single(m => m.Name == ComposeFullMethodName(method));
+
+            var firstOpcode = method.Body.Instructions.First();
+            var il = method.Body.GetILProcessor();
+
+            TypeDefinition delegateType = delegateField.FieldType.Resolve();
+            var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
+            int allParamsCount = method.Parameters.Count + 1; //all params and this
+
+            var instructions = new[]
+			{
+				il.Create(OpCodes.Ldarg_0),
+				il.Create(OpCodes.Ldflda, prototypeField.Instance()),
+				il.Create(OpCodes.Ldfld, delegateField.Instance()),
+				il.Create(OpCodes.Brfalse, firstOpcode),
+
+				il.Create(OpCodes.Ldarg_0),
+				il.Create(OpCodes.Ldflda, prototypeField.Instance()),
+				il.Create(OpCodes.Ldfld, delegateField.Instance()),
+			}.Concat(
+                Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
+            ).Concat(new[]
+			{
+				il.Create(OpCodes.Callvirt, invokeMethod.Instance()),
+				il.Create(OpCodes.Ret),
+			});
+
+            foreach (var instruction in instructions)
+                il.InsertBefore(firstOpcode, instruction);
+        }
+
+        private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
+        {
+            const string realImplementationPrefix = "x";
+            string name;
+            if (method.IsConstructor)
+                name = realImplementationPrefix + "Ctor";
+            else if (method.IsSetter && method.Name.StartsWith("set_"))
+                name = "set_" + realImplementationPrefix + method.Name.Substring(4);
+            else if (method.IsGetter && method.Name.StartsWith("get_"))
+                name = "get_" + realImplementationPrefix + method.Name.Substring(4);
+            else
+                name = realImplementationPrefix + method.Name;
+
+            MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
+
+            result.SemanticsAttributes = method.SemanticsAttributes;
+
+            result.IsRuntimeSpecialName = false;
+            result.IsVirtual = false;
+            if (method.IsConstructor)
+                result.IsSpecialName = false;
+
+            foreach (var param in method.Parameters)
+            {
+                result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
+            }
+
+            //copy method's body to x-method           
+            result.Body = method.Body;
+            method.Body = new MethodBody(method);
+
+            //add x-method to a type
+            method.DeclaringType.Methods.Add(result);
+
+            //registering a property if it's needed
+            if (result.IsGetter || result.IsSetter)
+            {
+                TypeReference propertyType = result.IsGetter ? result.ReturnType : result.Parameters[0].ParameterType;
+                string propertyName = result.Name.Substring(4);
+                var property = method.DeclaringType.Properties.SingleOrDefault(p => p.Name == propertyName);
+                if (property == null)
+                {
+                    property = new PropertyDefinition(propertyName, PropertyAttributes.None, propertyType);
+                    method.DeclaringType.Properties.Add(property);
+                }
+                if (result.IsGetter)
+                    property.GetMethod = result;
+                else
+                    property.SetMethod = result;
+            }
+
+            //repalce old method body
+            var il = method.Body.GetILProcessor();
+
+            int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
+            for (int i = 0; i < allParamsCount; i++)
+                il.Emit(OpCodes.Ldarg, i);
+
+            if (result.DeclaringType.HasGenericParameters)
+            {
+                il.Emit(OpCodes.Call, result.Instance());
+            }
+            else
+            {
+                il.Emit(OpCodes.Call, result);
+            }
+
+            il.Emit(OpCodes.Ret);
+            return result;
+        }
+
+        #endregion
+
         #region helpers
 
         private static string ComposeFullMethodName(MethodDefinition method)
@@ -405,7 +417,7 @@ namespace Mice
             return string.Join("_", partsOfName.ToArray()).Replace('`', '_');
         }
 
-        private static void ImportGenericParams(this TypeReference type, TypeReference source)
+        private static void ImportGenericParams(this TypeDefinition type, TypeReference source)
         {
             if (source.HasGenericParameters)
             {
@@ -418,7 +430,7 @@ namespace Mice
         {
             if (source.HasGenericParameters)
             {
-                field.FieldType=((TypeDefinition) field.FieldType).Instance();
+                ((TypeDefinition)field.FieldType).ImportGenericParams(source);
             }
         }
 
@@ -448,9 +460,21 @@ namespace Mice
             return reference;
         }
 
+        public static FieldReference Instance(this FieldDefinition self)
+        {
+            FieldReference result = new FieldReference(self.Name, self.FieldType);
+            result.DeclaringType = self.DeclaringType.Instance();
+                
+            if (self.DeclaringType.HasGenericParameters)
+            {
+                //((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
+            }
+            return result;
+        }
+
         #endregion
 
-        #region cecil addons (temprorary obsolete :)
+        #region cecil addons (obsolete)
 
         //public static TypeReference MakeGenericType(this TypeReference self, ICollection<GenericParameter> arguments)
         //{
