@@ -37,5 +37,29 @@ namespace Mice.Tests
             GenericStorage<int>.StaticPrototype.IntroduceItselfStatic = () => "static_test_completed";
             Assert.That(GenericStorage<int>.IntroduceItselfStatic() == "static_test_completed");
         }
+        
+        [Test]
+        public void StaticPrototypeCallTest()
+        {
+            GenericStorage<int>.StaticPrototype.IntroduceItself = (self) => { return "test"; };
+            GenericStorage<int> a = new GenericStorage<int>(10);
+
+            Assert.That(a.IntroduceItself()=="test");
+        }
+
+        [Test]
+        public void CtorTest()
+        {
+            GenericStorage<string>.StaticPrototype.Ctor = (self, value) => { self.Info = "cerated_by_test"; self.xCtor(value); };
+            var a = new GenericStorage<string>("abc");
+            Assert.That(a.Info == "cerated_by_test");
+            Assert.That(a.Data == "abc");
+        }
+
+
+        public void PrivateCtorTest()
+        {
+
+        }
     }
 }

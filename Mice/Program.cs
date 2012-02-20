@@ -11,7 +11,6 @@ namespace Mice
 {
     static class Program
     {
-        #region main
         static int Main(string[] args)
         {
             if (args.Length < 1)
@@ -20,34 +19,31 @@ namespace Mice
             string victimName = args[0];
             string keyFile = args.Length > 1 ? args[1] : null;
 
-            //try
-            //{
-            var assembly = AssemblyDefinition.ReadAssembly(victimName);
-            foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
-                ProcessType(type);
+            try
+            {
+                var assembly = AssemblyDefinition.ReadAssembly(victimName);
+                foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
+                    ProcessType(type);
 
-            var writerParams = new WriterParameters();
-            if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
-                writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
+                var writerParams = new WriterParameters();
+                if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
+                    writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
 
-            assembly.Write(victimName, writerParams);
-            return 0;
-            //}
-            //catch (Exception e)
-            //{
-            //    Console.WriteLine("Error. " + e.ToString());
-            //    Console.ReadKey();
-            //    return 1;
-            //}
+                assembly.Write(victimName, writerParams);
+                return 0;
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error. " + e.ToString());
+                Console.ReadKey();
+                return 1;
+            }
         }
         private static int Using()
         {
             Console.WriteLine("Usage: mice.exe assembly-name.dll [key-file.snk]");
             return 1;
         }
-        #endregion
-
-        #region checkings
 
         private static bool IsTypeToBeProcessed(TypeDefinition type)
         {
@@ -61,12 +57,10 @@ namespace Mice
         private static bool IsMethodToBeProcessed(MethodDefinition m)
         {
             return (m.IsPublic) &&
-                m.GenericParameters.Count == 0 &&
+                //m.GenericParameters.Count == 0 &&
                 !m.IsAbstract &&
                 !(m.IsStatic && m.IsConstructor);
         }
-
-        #endregion
 
         private static void ProcessType(TypeDefinition type)
         {
@@ -95,34 +89,29 @@ namespace Mice
                 }
             }
 
-            //generics processing stop here))
-
             //After using of Mice there always should be a way to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
             if (!type.IsAbstract)
             {
                 var privateDefaultCtor =
-                    type.Methods.SingleOrDefault(m => m.IsConstructor && m.Parameters.Count == 0 && !m.IsPublic && !m.IsStatic);
+                    type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
+
+                var publicDefaultCtor =
+                        type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
 
                 if (privateDefaultCtor != null)
                 {
                     CreateDeligateType(privateDefaultCtor);
                     CreateDeligateField(privateDefaultCtor);
-
                     MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
+                    
                     AddStaticPrototypeCall(privateDefaultCtor);
-
                     CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
                 }
-                else
+                else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
                 {
-                    var publicDefaultCtor =
-                        type.Methods.SingleOrDefault(m => m.IsConstructor && m.Parameters.Count == 0 && m.IsPublic && !m.IsStatic);
-                    if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
-                    {
-                        privateDefaultCtor = CreateDefaultCtor(type);
-                        CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
-                    }
+                    privateDefaultCtor = CreateDefaultCtor(type);
+                    CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
                 }
             }
         }
@@ -138,8 +127,6 @@ namespace Mice
             result.DeclaringType = type;
             return result;
         }
-
-        #region private defaul ctor
 
         private static MethodDefinition CreateDefaultCtor(TypeDefinition type)
         {
@@ -158,17 +145,13 @@ namespace Mice
         {
             MethodDefinition result = new MethodDefinition("CallCtor", MethodAttributes.Public, defCtor.DeclaringType);
             var il = result.Body.GetILProcessor();
-            il.Emit(OpCodes.Newobj, defCtor);
+            il.Emit(OpCodes.Newobj, defCtor.Instance());
             il.Emit(OpCodes.Ret);
 
             prototypeType.Methods.Add(result);
 
             return result;
         }
-
-        #endregion
-
-        #region methods proxofication
 
         private static FieldDefinition CreateDeligateField(MethodDefinition method)
         {
@@ -249,7 +232,7 @@ namespace Mice
             var delegateField =
                 method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").
                 Fields.Single(m => m.Name == ComposeFullMethodName(method));
-            
+
             var firstOpcode = method.Body.Instructions.First();
             var il = method.Body.GetILProcessor();
 
@@ -390,8 +373,6 @@ namespace Mice
             return result;
         }
 
-        #endregion
-
         #region helpers
 
         private static string ComposeFullMethodName(MethodDefinition method)
@@ -436,10 +417,15 @@ namespace Mice
 
         private static TypeReference Instance(this TypeDefinition self)
         {
-            var instance = new GenericInstanceType(self);
-            foreach (var argument in self.GenericParameters)
-                instance.GenericArguments.Add(argument);
-            return instance;
+            if (self.HasGenericParameters)
+            {
+                var instance = new GenericInstanceType(self);
+                foreach (var argument in self.GenericParameters)
+                    instance.GenericArguments.Add(argument);
+                return instance;
+            }
+            //implicit convertion TypeDefinition->TypeReference
+            return self;
         }
 
         public static MethodReference Instance(this MethodDefinition self)
@@ -464,46 +450,13 @@ namespace Mice
         {
             FieldReference result = new FieldReference(self.Name, self.FieldType);
             result.DeclaringType = self.DeclaringType.Instance();
-                
+
             if (self.DeclaringType.HasGenericParameters)
             {
                 //((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
             }
             return result;
         }
-
-        #endregion
-
-        #region cecil addons (obsolete)
-
-        //public static TypeReference MakeGenericType(this TypeReference self, ICollection<GenericParameter> arguments)
-        //{
-        //    if (self.GenericParameters.Count != arguments.Count)
-        //        throw new ArgumentException();
-
-        //    var instance = new GenericInstanceType(self);
-        //        foreach (var argument in arguments)
-        //        instance.GenericArguments.Add(argument);
-
-        //    return instance;
-        //}
-
-        //public static MethodReference MakeGenericMethod(this MethodReference self, ICollection<GenericParameter> arguments)
-        //{
-        //    if (self.GenericParameters.Count != arguments.Count)
-        //        throw new ArgumentException();
-
-        //    var instance = new GenericInstanceMethod(self);
-        //    foreach (var argument in arguments)
-        //        instance.GenericArguments.Add(argument);
-
-        //    return instance;
-        //}
-
-        //public static FieldReference MakeGeneric(this FieldReference self, ICollection<GenericParameter> arguments)
-        //{
-        //    return new FieldReference(self.Name, self.FieldType, self.DeclaringType.MakeGenericType(arguments));
-        //}
 
         #endregion
     }

@@ -12,6 +12,12 @@ namespace Cheese
     public class GenericStorage<T>
     {
         public T Data { get; private set; }
+        public string Info;
+
+        //public GenericStorage()
+        //{
+        //    //default parameterless ctor...
+        //}
 
         public GenericStorage(T initial_value)
         {
