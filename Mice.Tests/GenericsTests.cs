@@ -76,12 +76,5 @@ namespace Mice.Tests
             a.Data.GenericStorage_1Prototype.get_Data = (self) => "nothing to do here!";
             Assert.That(a.Data.Data == "nothing to do here!");
         }
-
-        [Test]
-        public void GenericMethodTest()
-        {
-            GenericStorage<string> a = new GenericStorage<string>("generic_method_test");
-            Assert.That(a.MakeItString<int>(45)=="45");
-        }
     }
 }

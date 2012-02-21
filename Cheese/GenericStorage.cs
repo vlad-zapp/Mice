@@ -14,11 +14,6 @@ namespace Cheese
         public T Data { get; private set; }
         public string Info;
 
-        //public GenericStorage()
-        //{
-        //    //default parameterless ctor...
-        //}
-
         public GenericStorage(T initial_value)
         {
             Data = initial_value;
@@ -44,17 +39,23 @@ namespace Cheese
             return "Hi i am just a static method";
         }
 
+		public M MakeMeSomeM<M>(M param)
+		{
+			return param;
+		}
 
-        public string MakeItString<S>(S item)
-        {
-            return item.ToString();
-        }
+    	public struct nestedStruct
+		{
+			private Dictionary<Type,object> _a;
+			public Dictionary<Type, object> a
+			{
+				get { return _a; }
+				set { _a = value; }
+			}
 
-        public struct nestedStruct
-        {
-            public delegate string MakeItstring<S>(S item);
-        }
+    		public delegate F makeF<F>();
+		}
 
-        public nestedStruct nestedInstance;
+
     }
 }
