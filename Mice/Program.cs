@@ -21,16 +21,16 @@ namespace Mice
 
             //try
             //{
-                var assembly = AssemblyDefinition.ReadAssembly(victimName);
-                foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
-                    ProcessType(type);
+            var assembly = AssemblyDefinition.ReadAssembly(victimName);
+            foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
+                ProcessType(type);
 
-                var writerParams = new WriterParameters();
-                if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
-                    writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
+            var writerParams = new WriterParameters();
+            if (!string.IsNullOrEmpty(keyFile) && File.Exists(keyFile))
+                writerParams.StrongNameKeyPair = new StrongNameKeyPair(File.ReadAllBytes(keyFile));
 
-                assembly.Write(victimName, writerParams);
-                return 0;
+            assembly.Write(victimName, writerParams);
+            return 0;
             //}
             //catch (Exception e)
             //{
@@ -39,7 +39,7 @@ namespace Mice
             //    return 1;
             //}
         }
-        
+
         private static int Using()
         {
             Console.WriteLine("Usage: mice.exe assembly-name.dll [key-file.snk]");
@@ -71,10 +71,10 @@ namespace Mice
 
             FieldDefinition staticPrototypeField = new FieldDefinition("StaticPrototype", FieldAttributes.Public | FieldAttributes.Static, prototypeType.Instance());
             type.Fields.Add(staticPrototypeField);
-            
+
             //After using of Mice there always should be a way to create an instance of public class
             //Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
-            
+
             //temprorary disabled
             //if (!type.IsAbstract)
             //{
@@ -104,7 +104,7 @@ namespace Mice
 
             //    }
             //}
-            
+
             //create delegate types & fields, patch methods to call delegates
             var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
             foreach (var method in processingMethods)
@@ -113,9 +113,8 @@ namespace Mice
 
                 //the end for methods with generics for now
                 if (method.HasGenericParameters) return;
-                
-                CreateDeligateField(method);
 
+                CreateDeligateField(method);
 
 
                 MethodDefinition newMethod = MoveCodeToImplMethod(method);
@@ -191,7 +190,7 @@ namespace Mice
                 TypeAttributes.Sealed | TypeAttributes.NestedPublic | TypeAttributes.RTSpecialName, multicastDeligateType);
 
             result.ImportGenericParams(parentType);
-            if(method.HasGenericParameters)
+            if (method.HasGenericParameters)
                 result.ImportGenericParams(method);
 
             //create constructor
@@ -219,14 +218,14 @@ namespace Mice
                 if (param.ParameterType.IsGenericParameter && !method.IsConstructor)
                 {
                     //TODO: remake this
-                    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m=>m.Name==param.ParameterType.Name)));
+                    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name)));
                 }
                 else
                     invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
             }
 
             result.Methods.Add(invoke);
-           
+
             //the rest of the process
             result.DeclaringType = parentType;
             parentType.NestedTypes.Add(result);
@@ -378,25 +377,25 @@ namespace Mice
 
         private static string ComposeFullMethodName(MethodDefinition method)
         {
+            StringBuilder FullName = new StringBuilder();
             bool includeParamsToName = method.DeclaringType.Methods.Where(m => m.Name == method.Name).Count() > 1;
-            var @params = method.Parameters.Select(p =>
+
+            FullName.Append(method.IsConstructor ? "Ctor" : method.Name);
+            
+            foreach (var p in method.Parameters)
             {
+                FullName.Append('_');
                 if (p.ParameterType.IsArray)
                 {
                     ArrayType array = (ArrayType)p.ParameterType;
+                    FullName.Append(array.ElementType.Name + "Array");
                     if (array.Dimensions.Count > 1)
-                        return array.ElementType.Name + "Array" + array.Dimensions.Count.ToString();
-                    else
-                        return array.ElementType.Name + "Array";
+                        FullName.Append(array.Dimensions.Count.ToString());
                 }
                 else
-                    return p.ParameterType.Name;
-            });
-            IEnumerable<string> partsOfName = new[] { method.IsConstructor ? "Ctor" : method.Name };
-            if (includeParamsToName)
-                partsOfName = partsOfName.Concat(@params);
-
-            return string.Join("_", partsOfName.ToArray()).Replace('`', '_');
+                    FullName.Append(p.ParameterType.Name);
+            }
+            return FullName.ToString();
         }
 
         private static void ImportGenericParams(this TypeDefinition type, TypeReference source)
