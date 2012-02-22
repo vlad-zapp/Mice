@@ -133,7 +133,8 @@ namespace Mice
 		{
 			var prototypeType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var delegateType = prototypeType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
-			var dicType = method.Module.Import(typeof(Dictionary<Type, object>));
+			//TODO: find a way to use delegateType instead of System.Delegate
+			var dicType = method.Module.Import(typeof(Dictionary<Type, Delegate>));
 
 			var protoDic = new FieldDefinition('_'+ComposeFullMethodName(method), FieldAttributes.Private, dicType);
 			prototypeType.Fields.Add(protoDic);
@@ -143,14 +144,18 @@ namespace Mice
 			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public|MethodAttributes.SpecialName|MethodAttributes.CompilerControlled|MethodAttributes.HideBySig, dicType);
 			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public|MethodAttributes.SpecialName|MethodAttributes.CompilerControlled|MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
 			
-			//get.Body.Variables.Add(new VariableDefinition("[0]",dicType));
-			//get.Body.GetILProcessor().Emit(OpCodes.Stloc_0);
-			//get.Body.GetILProcessor().Emit(OpCodes.Ldloc_0);
+			//simple IL getter
+			get.Body.Variables.Add(new VariableDefinition("[0]",dicType));
+			get.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
+			get.Body.GetILProcessor().Emit(OpCodes.Ldfld, protoDic);
+			get.Body.GetILProcessor().Emit(OpCodes.Stloc_0);
+			get.Body.GetILProcessor().Emit(OpCodes.Ldloc_0);
 			get.Body.GetILProcessor().Emit(OpCodes.Ret);
 			
-			//set.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
-			//set.Body.GetILProcessor().Emit(OpCodes.Ldarg_1);
-			//set.Body.GetILProcessor().Emit(OpCodes.Stfld,protoDic);
+			//simple IL setter
+			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
+			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_1);
+			set.Body.GetILProcessor().Emit(OpCodes.Stfld,protoDic);
 			set.Body.GetILProcessor().Emit(OpCodes.Ret);
 
 			Property.GetMethod = get;
@@ -161,8 +166,6 @@ namespace Mice
 			prototypeType.Methods.Add(set);
 			
 			prototypeType.Properties.Add(Property);
-
-
 		}
 
 		private static TypeDefinition CreatePrototypeType(TypeDefinition type)
