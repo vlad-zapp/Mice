@@ -34,28 +34,36 @@ namespace Cheese
             return String.Format("{0} {1}", greeting, typeof(T).ToString());
         }
 
-        public static string IntroduceItselfStatic()
-        {
-            return "Hi i am just a static method";
-        }
+		//public static string IntroduceItselfStatic()
+		//{
+		//    return "Hi i am just a static method";
+		//}
+
+		//public A makeMeA<A>(A item)
+		//{
+		//    return item;
+		//}
+
+		//public B makeMeB<B>(B item)
+		//{
+		//    return makeMeA<B>(item);
+		//}
 
 		public M MakeMeSomeM<M>(M param)
 		{
 			return param;
 		}
 
-    	public struct nestedStruct
+		public Dictionary<Type, object> Dict = new Dictionary<Type, object>();
+		public delegate K Maker<K>(K item);
+
+		public L MakeSomeL<L>(L param)
 		{
-			private Dictionary<Type,object> _a;
-			public Dictionary<Type, object> a
+			if (Dict[typeof(L)] != null)
 			{
-				get { return _a; }
-				set { _a = value; }
+				((Maker<L>)(Dict[typeof(L)]))(param);
 			}
-
-    		public delegate F makeF<F>();
+			return MakeMeSomeM<L>(param);
 		}
-
-
     }
 }

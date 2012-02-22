@@ -112,19 +112,19 @@ namespace Mice
 				CreateDeligateType(method);
 
 				if (method.HasGenericParameters)
-				{
 					CreateMethodPrototypesDictionary(method);
-					return; //the end for methods with generics for now
-				}
 				else
 					CreateDeligateField(method);
 
-				//MethodDefinition newMethod = MoveCodeToImplMethod(method);
+				MethodDefinition newMethod = MoveCodeToImplMethod(method);
 
 				//AddStaticPrototypeCall(method);
 
-				//if (!method.IsStatic)
-					//AddInstancePrototypeCall(method);
+				if (!method.IsStatic)
+					if(method.HasGenericParameters)
+						AddGenericInstancePrototypeCall(method);
+					else
+						AddInstancePrototypeCall(method);
 
 			}
 		}
@@ -134,37 +134,37 @@ namespace Mice
 			var prototypeType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var delegateType = prototypeType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
 			//TODO: find a way to use delegateType instead of System.Delegate
-			var dicType = method.Module.Import(typeof(Dictionary<Type, Delegate>));
+			var dicType = method.Module.Import(typeof(Dictionary<Type, object>));
 
-			var protoDic = new FieldDefinition('_'+ComposeFullMethodName(method), FieldAttributes.Private, dicType);
+			var protoDic = new FieldDefinition('_' + ComposeFullMethodName(method), FieldAttributes.Private, dicType);
 			prototypeType.Fields.Add(protoDic);
 			protoDic.DeclaringType = prototypeType;
 
 			var Property = new PropertyDefinition(ComposeFullMethodName(method), PropertyAttributes.None, dicType);
-			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public|MethodAttributes.SpecialName|MethodAttributes.CompilerControlled|MethodAttributes.HideBySig, dicType);
-			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public|MethodAttributes.SpecialName|MethodAttributes.CompilerControlled|MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
-			
+			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
+			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
+
 			//simple IL getter
-			get.Body.Variables.Add(new VariableDefinition("[0]",dicType));
+			get.Body.Variables.Add(new VariableDefinition("[0]", dicType));
 			get.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
 			get.Body.GetILProcessor().Emit(OpCodes.Ldfld, protoDic);
 			get.Body.GetILProcessor().Emit(OpCodes.Stloc_0);
 			get.Body.GetILProcessor().Emit(OpCodes.Ldloc_0);
 			get.Body.GetILProcessor().Emit(OpCodes.Ret);
-			
+
 			//simple IL setter
 			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
 			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_1);
-			set.Body.GetILProcessor().Emit(OpCodes.Stfld,protoDic);
+			set.Body.GetILProcessor().Emit(OpCodes.Stfld, protoDic);
 			set.Body.GetILProcessor().Emit(OpCodes.Ret);
 
 			Property.GetMethod = get;
 			prototypeType.Methods.Add(get);
-			
-			set.Parameters.Add(new ParameterDefinition("value",ParameterAttributes.None, dicType));
+
+			set.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, dicType));
 			Property.SetMethod = set;
 			prototypeType.Methods.Add(set);
-			
+
 			prototypeType.Properties.Add(Property);
 		}
 
@@ -245,8 +245,8 @@ namespace Mice
 
 			//create Invoke
 			var invoke = new MethodDefinition("Invoke",
-			                                  MethodAttributes.Public | MethodAttributes.HideBySig |
-			                                  MethodAttributes.NewSlot | MethodAttributes.Virtual, method.ReturnType);
+											  MethodAttributes.Public | MethodAttributes.HideBySig |
+											  MethodAttributes.NewSlot | MethodAttributes.Virtual, method.ReturnType);
 
 			invoke.IsRuntime = true;
 			if (!method.IsStatic)
@@ -254,9 +254,9 @@ namespace Mice
 				invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType.Instance()));
 			}
 
-			if(method.ReturnType.IsGenericParameter)
+			if (method.ReturnType.IsGenericParameter)
 			{
-				invoke.GenericParameters.Add(new GenericParameter(method.ReturnType.Name,invoke));
+				invoke.GenericParameters.Add(new GenericParameter(method.ReturnType.Name, invoke));
 				//invoke.ReturnType = method.ReturnType;
 			}
 
@@ -283,9 +283,9 @@ namespace Mice
 		{
 			var prototypeField =
 				method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
-			var delegateField =
-				method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").
-				Fields.Single(m => m.Name == ComposeFullMethodName(method));
+			
+			FieldDefinition delegateField;
+			delegateField = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").Fields.Single(m => m.Name == ComposeFullMethodName(method));
 
 			var firstOpcode = method.Body.Instructions.First();
 			var il = method.Body.GetILProcessor();
@@ -312,6 +312,46 @@ namespace Mice
 
 			foreach (var instruction in instructions)
 				il.InsertBefore(firstOpcode, instruction);
+		}
+
+		private static void AddGenericInstancePrototypeCall(MethodDefinition method)
+		{
+			var systemTypeClass = method.Module.Import(typeof (Type));
+			var objectType = method.Module.Import(typeof(object));
+			
+			var dictType = method.Module.Import(typeof (Dictionary<Type,object>));
+			var DictGetMethod = method.Module.Import(dictType.Resolve().Methods.Single(m=>m.Name=="get_Item"));
+			
+			DictGetMethod = new GenericInstanceMethod(DictGetMethod);
+
+			//((GenericInstanceMethod)DictGetMethod).GenericArguments.Add();
+			//((GenericInstanceMethod)DictGetMethod).GenericArguments.Add(new GenericParameter("Value", DictGetMethod.DeclaringType));
+			
+			var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
+			var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
+			var delegateDict = parentClass.Fields.Single(m => m.Name == '_'+ComposeFullMethodName(method));
+
+			var firstOpcode = method.Body.Instructions.First();
+			var il = method.Body.GetILProcessor();
+
+			var instructions = new[]
+			{
+			    il.Create(OpCodes.Ldarg_0),
+			    il.Create(OpCodes.Ldfld, delegateDict.Instance()),
+			    il.Create(OpCodes.Ldtoken, method.GenericParameters[0]),
+			    il.Create(OpCodes.Callvirt,  DictGetMethod),
+			    il.Create(OpCodes.Ldnull),
+			    il.Create(OpCodes.Ceq),
+
+			    il.Create(OpCodes.Stloc_1),
+			    il.Create(OpCodes.Ldloc_1),
+
+			    il.Create(OpCodes.Brtrue, firstOpcode),
+			};
+
+			foreach (var instruction in instructions)
+			    il.InsertBefore(firstOpcode, instruction);
+
 		}
 
 		private static void AddInstancePrototypeCall(MethodDefinition method)
@@ -369,12 +409,13 @@ namespace Mice
 			result.IsRuntimeSpecialName = false;
 			result.IsVirtual = false;
 			if (method.IsConstructor)
-				result.IsSpecialName = false;
+			    result.IsSpecialName = false;
+
+			foreach (var genericParam in method.GenericParameters)
+			    result.GenericParameters.Add(new GenericParameter(genericParam.Name, result));
 
 			foreach (var param in method.Parameters)
-			{
-				result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
-			}
+			    result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
 
 			//copy method's body to x-method           
 			result.Body = method.Body;
@@ -386,36 +427,36 @@ namespace Mice
 			//registering a property if it's needed
 			if (result.IsGetter || result.IsSetter)
 			{
-				TypeReference propertyType = result.IsGetter ? result.ReturnType : result.Parameters[0].ParameterType;
-				string propertyName = result.Name.Substring(4);
-				var property = method.DeclaringType.Properties.SingleOrDefault(p => p.Name == propertyName);
-				if (property == null)
-				{
-					property = new PropertyDefinition(propertyName, PropertyAttributes.None, propertyType);
-					method.DeclaringType.Properties.Add(property);
-				}
-				if (result.IsGetter)
-					property.GetMethod = result;
-				else
-					property.SetMethod = result;
+			    TypeReference propertyType = result.IsGetter ? result.ReturnType : result.Parameters[0].ParameterType;
+			    string propertyName = result.Name.Substring(4);
+			    var property = method.DeclaringType.Properties.SingleOrDefault(p => p.Name == propertyName);
+			    if (property == null)
+			    {
+			        property = new PropertyDefinition(propertyName, PropertyAttributes.None, propertyType);
+			        method.DeclaringType.Properties.Add(property);
+			    }
+			    if (result.IsGetter)
+			        property.GetMethod = result;
+			    else
+			        property.SetMethod = result;
 			}
 
 			//repalce old method body
 			var il = method.Body.GetILProcessor();
-
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
+
+			if (method.HasGenericParameters)
+			{
+				//for some reason we need to import variables correctly
+				result.Body.Variables.Clear();
+				foreach (var genericParam in method.GenericParameters)
+					result.Body.Variables.Add(new VariableDefinition(genericParam.Name, genericParam));
+			}
+
 			for (int i = 0; i < allParamsCount; i++)
 				il.Emit(OpCodes.Ldarg, i);
 
-			if (result.DeclaringType.HasGenericParameters)
-			{
-				il.Emit(OpCodes.Call, result.Instance());
-			}
-			else
-			{
-				il.Emit(OpCodes.Call, result);
-			}
-
+			il.Emit(OpCodes.Call, result.Instance());
 			il.Emit(OpCodes.Ret);
 			return result;
 		}
@@ -481,8 +522,7 @@ namespace Mice
 		public static MethodReference Instance(this MethodDefinition self)
 		{
 			var arguments = self.DeclaringType.GenericParameters;
-			var reference = new MethodReference(self.Name, self.ReturnType,
-												self.DeclaringType.Instance());
+			var reference = new MethodReference(self.Name, self.ReturnType, self.DeclaringType.Instance());
 			reference.HasThis = self.HasThis;
 			reference.ExplicitThis = self.ExplicitThis;
 			reference.CallingConvention = self.CallingConvention;
@@ -492,6 +532,14 @@ namespace Mice
 
 			foreach (var generic_parameter in self.GenericParameters)
 				reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
+
+			if (self.HasGenericParameters)
+			{
+				reference = new GenericInstanceMethod(reference);
+				foreach (var genericParam in self.GenericParameters)
+					((GenericInstanceMethod)(reference)).GenericArguments.Add(genericParam);
+				//reference.Parameters.Add(new ParameterDefinition(reference.GenericParameters[0]));
+			}
 
 			return reference;
 		}
