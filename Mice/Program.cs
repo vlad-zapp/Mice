@@ -118,13 +118,14 @@ namespace Mice
 
 				MethodDefinition newMethod = MoveCodeToImplMethod(method);
 
-				//AddStaticPrototypeCall(method);
-
-				if (!method.IsStatic)
-				    if (method.HasGenericParameters)
-				        AddGenericInstancePrototypeCall(method, newMethod);
-				    else
-				        AddInstancePrototypeCall(method);
+				if (method.HasGenericParameters && !method.IsStatic)
+					AddGenericInstancePrototypeCall(method, newMethod);
+				else
+				{
+					AddStaticPrototypeCall(method);
+					if (!method.IsStatic)
+						AddInstancePrototypeCall(method);
+				}
 			}
 		}
 
@@ -321,7 +322,7 @@ namespace Mice
 
 			//external call
 			var TypeFromHandle = method.Module.Import(systemTypeClass.Resolve().Methods.Single(m => m.Name == "GetTypeFromHandle"));
-			
+
 			//setup Dictionary<Type,object> and it's get accessor 
 			var dictType = method.Module.Import(typeof(Dictionary<Type, object>));
 			var dictGetMethod = method.Module.Import(dictType.Resolve().Methods.Single(m => m.Name == "get_Item"));
@@ -330,30 +331,33 @@ namespace Mice
 			//setup prototype class and delegate for method
 			var protoClassType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var protoDelegateType = protoClassType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
-			var protoDelegate = new GenericInstanceType(protoDelegateType);
 
 			//setup filds
 			var protoField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
 			var dictField = protoClassType.Fields.Single(m => m.Name == '_' + ComposeFullMethodName(method));
-			
+
 			//setup body variables
 			foreach (var param in method.GenericParameters)
 				method.Body.Variables.Add(new VariableDefinition(param));
-			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool)))); 
+			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool))));
 
 			//setup pointers for br* opcodes
 			var firstOpcode = method.Body.Instructions.First(); //points to call to default method
-			var lastOpcode = method.Body.Instructions[method.Body.Instructions.Count-2]; //points to stloc
+			var lastOpcode = method.Body.Instructions[method.Body.Instructions.Count - 2]; //points to stloc
 			var il = method.Body.GetILProcessor();
+
+			var protoDelegate = new GenericInstanceType(protoDelegateType);
+			foreach (var param in method.DeclaringType.GenericParameters.Concat(method.GenericParameters))
+				protoDelegate.GenericArguments.Add(param);
 
 			//setup invoke method
 			//TODO: remove hack!!
 			var protoInvokeDef = protoDelegateType.Methods.Single(m => m.Name == "Invoke");
-			var protoInvoke = protoInvokeDef.Instance(protoDelegate);
+
+			var protoInvoke = protoInvokeDef.Instance();
+			//TODO: and that hack too!
 			protoInvoke.ReturnType = protoInvoke.Parameters[1].ParameterType;
 
-			foreach (var param in method.DeclaringType.GenericParameters.Concat(method.GenericParameters))
-				protoDelegate.GenericArguments.Add(param);
 
 			var instructions = new Instruction[]
 			{
@@ -386,8 +390,8 @@ namespace Mice
 			Instruction.Create(OpCodes.Br_S, lastOpcode), // IL_0055
 			};
 
-			foreach(Instruction inst in instructions)
-				il.InsertBefore(firstOpcode,inst);
+			foreach (Instruction inst in instructions)
+				il.InsertBefore(firstOpcode, inst);
 		}
 
 		private static void AddInstancePrototypeCall(MethodDefinition method)
@@ -422,7 +426,7 @@ namespace Mice
 			});
 
 			foreach (var instruction in instructions)
-			    il.InsertBefore(firstOpcode, instruction);
+				il.InsertBefore(firstOpcode, instruction);
 		}
 
 		private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
@@ -481,20 +485,17 @@ namespace Mice
 			var il = method.Body.GetILProcessor();
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
 
-			//if (method.HasGenericParameters)
-			//{
-			//    //for some reason we need to import variables correctly
-			//    result.Body.Variables.Clear();
-			//    foreach (var genericParam in method.GenericParameters)
-			//        result.Body.Variables.Add(new VariableDefinition(genericParam.Name, genericParam));
-			//}
-
 			for (int i = 0; i < allParamsCount; i++)
 				il.Emit(OpCodes.Ldarg, i);
 
 			il.Emit(OpCodes.Call, result.Instance());
-			il.Emit(OpCodes.Stloc_0);
-			il.Emit(OpCodes.Ldloc_0);
+			
+			if (method.HasGenericParameters)
+			{
+				il.Emit(OpCodes.Stloc_0);
+				il.Emit(OpCodes.Ldloc_0);
+			}
+			
 			il.Emit(OpCodes.Ret);
 			return result;
 		}
@@ -548,7 +549,7 @@ namespace Mice
 
 		private static void ImportGenericParams(this MethodReference self, IGenericParameterProvider source)
 		{
-			foreach(var genericParam in source.GenericParameters)
+			foreach (var genericParam in source.GenericParameters)
 			{
 				self.GenericParameters.Add(genericParam);
 			}
@@ -569,15 +570,10 @@ namespace Mice
 			return self;
 		}
 
-		public static MethodReference Instance(this MethodDefinition self, TypeReference DeclaringType = null)
+		public static MethodReference Instance(this MethodDefinition self, params ICollection<GenericParameter>[] addons)
 		{
-			TypeReference declaringType;
-			if (DeclaringType == null)
-				declaringType = self.DeclaringType.Instance();
-			else
-				declaringType = DeclaringType;
-
-			var arguments = self.DeclaringType.GenericParameters;
+			var declaringType = self.DeclaringType.Instance();
+			
 			var reference = new MethodReference(self.Name, self.ReturnType, declaringType);
 			reference.HasThis = self.HasThis;
 			reference.ExplicitThis = self.ExplicitThis;
@@ -587,9 +583,9 @@ namespace Mice
 				reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
 
 			foreach (var generic_parameter in self.GenericParameters)
-				reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
+			    reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
 
-			if (self.HasGenericParameters && !(self.IsGetter) && !(self.IsSetter) && DeclaringType == null)
+			if (self.HasGenericParameters)
 			{
 				reference = new GenericInstanceMethod(reference);
 				foreach (var genericParam in self.GenericParameters)
