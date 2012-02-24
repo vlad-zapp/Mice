@@ -54,16 +54,21 @@ namespace Cheese
 			return param;
 		}
 
-		public Dictionary<Type, object> Dict = new Dictionary<Type, object>();
-		public delegate K Maker<K>(K item);
-
 		public L MakeSomeL<L>(L param)
 		{
-			if (Dict[typeof(L)] != null)
+			if (testSample.Dict[typeof(L)] != null)
 			{
-				((Maker<L>)(Dict[typeof(L)]))(param);
+				return ((Test.Maker<L>)testSample.Dict[typeof(L)]).Invoke(this, param);
 			}
 			return MakeMeSomeM<L>(param);
 		}
+		
+    	public struct Test
+    	{
+			public Dictionary<Type, object> Dict;
+			public delegate K Maker<K>(GenericStorage<T> self, K item);
+    	}
+
+    	public Test testSample = new GenericStorage<T>.Test();
     }
 }
