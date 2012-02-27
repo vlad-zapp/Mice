@@ -61,7 +61,12 @@ namespace Cheese
 		    {
 				return ((Test.Maker<L,H>)testSample.Dict[key]).Invoke(this, param, param2);
 		    }
-		    return MakeMeSomeM<L,H>(param, param2);
+			else 
+			if (GenericStorage<T>.testSampleStatic.Dict.ContainsKey(key))
+			{
+				return ((Test.Maker<L, H>)testSampleStatic.Dict[key]).Invoke(this, param, param2);
+			}
+			return MakeMeSomeM<L,H>(param, param2);
 		}
 		
 		public struct Test
@@ -70,6 +75,7 @@ namespace Cheese
 		    public delegate K Maker<K,J>(GenericStorage<T> self, K item, J item2);
 		}
 
+		public static Test testSampleStatic = new GenericStorage<T>.Test();
 		public Test testSample = new GenericStorage<T>.Test();
     }
 }

@@ -75,32 +75,32 @@ namespace Mice
 			//After using of Mice there always should be a way to create an instance of public class
 			//Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
 
-			//if (!type.IsAbstract)
-			//{
-			//    var privateDefaultCtor =
-			//        type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
+			if (!type.IsAbstract)
+			{
+				var privateDefaultCtor =
+					type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
 
-			//    var publicDefaultCtor =
-			//            type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
+				var publicDefaultCtor =
+						type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
 
-			//    if (privateDefaultCtor != null)
-			//    {
-			//        //TODO:gona make it public. later
-			//        CreateDeligateType(privateDefaultCtor);
-			//        CreateDeligateField(privateDefaultCtor);
+				if (privateDefaultCtor != null)
+				{
+					//TODO:gona make it public. later
+					CreateDeligateType(privateDefaultCtor);
+					CreateDeligateField(privateDefaultCtor);
 
-			//        AddPrototypeCalls(privateDefaultCtor, MoveCodeToImplMethod(privateDefaultCtor));
-			//        CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
-			//    }
-			//    else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
-			//    {
-			//        publicDefaultCtor = CreateDefaultCtor(type);
-			//        //that is here only for compability with old tests
-			//        //because now we create bulic constructor instead of private one
-			//        CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
+					AddPrototypeCalls(privateDefaultCtor, MoveCodeToImplMethod(privateDefaultCtor));
+					CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
+				}
+				else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
+				{
+					publicDefaultCtor = CreateDefaultCtor(type);
+					//that is here only for compability with old tests
+					//because now we create bulic constructor instead of private one
+					CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
 
-			//    }
-			//}
+				}
+			}
 
 			//create delegate types & fields, patch methods to call delegates
 			var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
@@ -330,7 +330,6 @@ namespace Mice
 			//external types
 			var systemTypeClass = method.Module.Import(typeof(Type));
 			var systemTypeArray = method.Module.Import(typeof(Type[]));
-			var objectType = method.Module.Import(typeof(object));
 
 			//external call
 			var TypeFromHandle = method.Module.Import(systemTypeClass.Resolve().Methods.Single(m => m.Name == "GetTypeFromHandle"));
@@ -348,6 +347,7 @@ namespace Mice
 
 			//setup fields
 			var protoField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
+			var staticProtoField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
 			var dictField = protoClassType.Fields.Single(m => m.Name == '_' + ComposeFullMethodName(method));
 
 			//setup delegate proto
@@ -359,7 +359,10 @@ namespace Mice
 			var protoInvoke = protoDelegateType.Methods.Single(m => m.Name == "Invoke");
 
 			var il = method.Body.GetILProcessor();
+			//thus is a place to store instructions, which operands needs to b
 			List<Instruction> jmpReplacements = new List<Instruction>();
+
+			var allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1);
 
 			//setup body variables
 			method.Body.Variables.Add(new VariableDefinition("key", systemTypeArray)); //key dictionary
@@ -398,7 +401,7 @@ namespace Mice
 				il.Emit(OpCodes.Stloc_3);
 				il.Emit(OpCodes.Ldloc_3);
 				il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); //will be replaced
-				jmpReplacements.Add(il.Body.Instructions.Last());
+				jmpReplacements.Add(il.Body.Instructions.Last()); //=>to static prototype
 				
 				//if key is found - call proto function
 				il.Emit(OpCodes.Nop); 
@@ -408,13 +411,62 @@ namespace Mice
 				il.Emit(OpCodes.Ldloc_0);
 				il.Emit(OpCodes.Callvirt, dictGetItemMethod); // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object>::get_Item(!0)
 				il.Emit(OpCodes.Castclass, protoDelegate); // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
-				for (int i = 0; i < method.Parameters.Count() + 1; i++ )
+				for (int i = 0; i < allParamsCount; i++ )
 					il.Emit(OpCodes.Ldarg, i);
 				
 				il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 				il.Emit(OpCodes.Stloc_1); //
-				il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); // IL_0067
+				il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); //will be replaced
+				
+				il.Emit(OpCodes.Nop);
+				jmpReplacements[0].Operand = il.Body.Instructions.Last();
+				jmpReplacements.Clear();
+				jmpReplacements.Add(il.Body.Instructions[il.Body.Instructions.Count-2]); //=>to ret
 			}
+
+			//finding key in static prototype dictionary
+			il.Emit(OpCodes.Ldsflda, staticProtoField.Instance());
+			il.Emit(OpCodes.Ldfld, dictField);
+			il.Emit(OpCodes.Ldloc_0);
+			il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
+			il.Emit(OpCodes.Ldc_I4_0);
+			il.Emit(OpCodes.Ceq);
+			il.Emit(OpCodes.Stloc_3);
+			il.Emit(OpCodes.Ldloc_3);
+			il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); //will be replaced
+			jmpReplacements.Add(il.Body.Instructions.Last()); //=>to call to defualt x-method
+
+			//if key is found - call proto function
+			il.Emit(OpCodes.Nop);
+			il.Emit(OpCodes.Ldsflda, staticProtoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
+			il.Emit(OpCodes.Ldfld, dictField); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+			il.Emit(OpCodes.Ldloc_0);
+			il.Emit(OpCodes.Callvirt, dictGetItemMethod); // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object>::get_Item(!0)
+			il.Emit(OpCodes.Castclass, protoDelegate); // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
+			for (int i = 0; i < allParamsCount; i++)
+			    il.Emit(OpCodes.Ldarg, i);
+
+			il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
+			il.Emit(OpCodes.Stloc_1); //
+			il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); // IL_0067
+
+			il.Emit(OpCodes.Nop);
+			jmpReplacements.Last().Operand = il.Body.Instructions.Last();
+			jmpReplacements.Remove(jmpReplacements.Last());
+			jmpReplacements.Add(il.Body.Instructions[il.Body.Instructions.Count - 2]);
+
+			//call x-method by default
+			for (int i = 0; i < allParamsCount; i++)
+				il.Emit(OpCodes.Ldarg, i);
+			il.Emit(OpCodes.Call,real_method.Instance());
+			il.Emit(OpCodes.Stloc_1);
+			il.Emit(OpCodes.Ldloc_1);
+
+			foreach (var jmpReplacement in jmpReplacements)
+				jmpReplacement.Operand = il.Body.Instructions.Last();
+			
+			il.Emit(OpCodes.Ret);
+
 		}
 
 		private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
