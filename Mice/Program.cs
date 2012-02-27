@@ -75,7 +75,6 @@ namespace Mice
 			//After using of Mice there always should be a way to create an instance of public class
 			//Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
 
-			//temprorary disabled
 			//if (!type.IsAbstract)
 			//{
 			//    var privateDefaultCtor =
@@ -90,9 +89,7 @@ namespace Mice
 			//        CreateDeligateType(privateDefaultCtor);
 			//        CreateDeligateField(privateDefaultCtor);
 
-			//        MethodDefinition newMethod = MoveCodeToImplMethod(privateDefaultCtor);
-
-			//        AddStaticPrototypeCall(privateDefaultCtor);
+			//        AddPrototypeCalls(privateDefaultCtor, MoveCodeToImplMethod(privateDefaultCtor));
 			//        CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
 			//    }
 			//    else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
@@ -112,19 +109,14 @@ namespace Mice
 				CreateDeligateType(method);
 
 				if (method.HasGenericParameters)
+				{
 					CreateMethodPrototypesDictionary(method);
-				else
-					CreateDeligateField(method);
-
-				MethodDefinition newMethod = MoveCodeToImplMethod(method);
-
-				if (method.HasGenericParameters && !method.IsStatic)
-					AddGenericInstancePrototypeCall(method, newMethod);
+					AddGenericPrototypeCalls(method, MoveCodeToImplMethod(method));
+				}
 				else
 				{
-					AddStaticPrototypeCall(method);
-					if (!method.IsStatic)
-						AddInstancePrototypeCall(method);
+					CreateDeligateField(method);
+					AddPrototypeCalls(method, MoveCodeToImplMethod(method));
 				}
 			}
 		}
@@ -133,7 +125,7 @@ namespace Mice
 		{
 			var prototypeType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var delegateType = prototypeType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
-			//TODO: find a way to use delegateType instead of System.Delegate
+			//TODO: find a way to use delegateType instead of System.Delegate/object
 			var dicType = method.Module.Import(typeof(Dictionary<Type, object>));
 
 			var protoDic = new FieldDefinition('_' + ComposeFullMethodName(method), FieldAttributes.Private, dicType);
@@ -269,7 +261,6 @@ namespace Mice
 				else
 					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
 			}
-
 			result.Methods.Add(invoke);
 
 			//the rest of the process
@@ -278,155 +269,152 @@ namespace Mice
 			return result;
 		}
 
-		private static void AddStaticPrototypeCall(MethodDefinition method)
+		private static void AddPrototypeCalls(MethodDefinition method, MethodDefinition newMethod)
 		{
-			var prototypeField =
-				method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
+			var staticPrototypeField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
+			var dynamicPrototypeField = method.DeclaringType.Fields.SingleOrDefault(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
+			var delegateField = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").Fields.Single(m => m.Name == ComposeFullMethodName(method));
 
-			FieldDefinition delegateField;
-			delegateField = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").Fields.Single(m => m.Name == ComposeFullMethodName(method));
-
-			var firstOpcode = method.Body.Instructions.First();
 			var il = method.Body.GetILProcessor();
+			List<Instruction> jmpReplacements = new List<Instruction>();
 
 			TypeDefinition delegateType = delegateField.FieldType.Resolve();
 			var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
 
-			var instructions = new[]
-			{
-				il.Create(OpCodes.Ldsflda, prototypeField.Instance()),
-				il.Create(OpCodes.Ldfld, delegateField.Instance()),
-				il.Create(OpCodes.Brfalse, firstOpcode),
+			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
+			il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			il.Emit(OpCodes.Brfalse, il.Body.Instructions.First()); //addres will be replaced
+			jmpReplacements.Add(il.Body.Instructions.Last());
 
-				il.Create(OpCodes.Ldsflda, prototypeField.Instance()),
-				il.Create(OpCodes.Ldfld, delegateField.Instance()),
-			}.Concat(
-				Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
-			).Concat(new[]
-			{
-				il.Create(OpCodes.Callvirt, invokeMethod.Instance()),
-				il.Create(OpCodes.Ret),
-			});
+			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
+			il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+			il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
+			il.Emit(OpCodes.Ret);
 
-			foreach (var instruction in instructions)
-				il.InsertBefore(firstOpcode, instruction);
+			if (!method.IsStatic)
+			{
+				il.Emit(OpCodes.Nop);
+
+				foreach (var jmpReplacement in jmpReplacements)
+					jmpReplacement.Operand = il.Body.Instructions.Last();
+				jmpReplacements.Clear();
+
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
+				il.Emit(OpCodes.Ldfld, delegateField.Instance());
+				il.Emit(OpCodes.Brfalse, il.Body.Instructions.First());
+				jmpReplacements.Add(il.Body.Instructions.Last()); //addres will be replaced
+
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
+				il.Emit(OpCodes.Ldfld, delegateField.Instance());
+				for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+				il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
+				il.Emit(OpCodes.Ret);
+			}
+
+			il.Emit(OpCodes.Nop);
+			foreach (var jmpReplacement in jmpReplacements)
+				jmpReplacement.Operand = il.Body.Instructions.Last();
+
+			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+			il.Emit(OpCodes.Call, newMethod.Instance());
+			il.Emit(OpCodes.Ret);
 		}
 
-		private static void AddGenericInstancePrototypeCall(MethodDefinition method, MethodDefinition real_method)
+		private static void AddGenericPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
 		{
 
 			//external types
 			var systemTypeClass = method.Module.Import(typeof(Type));
+			var systemTypeArray = method.Module.Import(typeof(Type[]));
 			var objectType = method.Module.Import(typeof(object));
 
 			//external call
 			var TypeFromHandle = method.Module.Import(systemTypeClass.Resolve().Methods.Single(m => m.Name == "GetTypeFromHandle"));
 
-			//setup Dictionary<Type,object> and it's get accessor 
-			var dictType = method.Module.Import(typeof(Dictionary<Type, object>));
-			var dictGetMethod = method.Module.Import(dictType.Resolve().Methods.Single(m => m.Name == "get_Item"));
-			dictGetMethod.DeclaringType = dictType;
+			//setup Dictionary<Type,object> and it's ContainsKey method
+			var dictType = method.Module.Import(typeof(Dictionary<Type[], object>));
+			var dictContainsKeyMethod = method.Module.Import(dictType.Resolve().Methods.Single(m => m.Name == "ContainsKey"));
+			var dictGetItemMethod = method.Module.Import(dictType.Resolve().Methods.Single(m => m.Name == "get_Item"));
+			dictContainsKeyMethod.DeclaringType = dictType;
+			dictGetItemMethod.DeclaringType = dictType;
 
 			//setup prototype class and delegate for method
 			var protoClassType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var protoDelegateType = protoClassType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
 
-			//setup filds
+			//setup fields
 			var protoField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
 			var dictField = protoClassType.Fields.Single(m => m.Name == '_' + ComposeFullMethodName(method));
 
-			//setup body variables
-			foreach (var param in method.GenericParameters)
-				method.Body.Variables.Add(new VariableDefinition(param));
-			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool))));
-
-			//setup pointers for br* opcodes
-			var firstOpcode = method.Body.Instructions.First(); //points to call to default method
-			var lastOpcode = method.Body.Instructions[method.Body.Instructions.Count - 2]; //points to stloc
-			var il = method.Body.GetILProcessor();
-
+			//setup delegate proto
 			var protoDelegate = new GenericInstanceType(protoDelegateType);
 			foreach (var param in method.DeclaringType.GenericParameters.Concat(method.GenericParameters))
 				protoDelegate.GenericArguments.Add(param);
 
 			//setup invoke method
-			//TODO: remove hack!!
-			var protoInvokeDef = protoDelegateType.Methods.Single(m => m.Name == "Invoke");
+			var protoInvoke = protoDelegateType.Methods.Single(m => m.Name == "Invoke");
 
-			var protoInvoke = protoInvokeDef.Instance();
-			//TODO: and that hack too!
-			protoInvoke.ReturnType = protoInvoke.Parameters[1].ParameterType;
-
-
-			var instructions = new Instruction[]
-			{
-			//TODO: do we need every stloc-ldloc pair?
-			Instruction.Create(OpCodes.Nop),
-			Instruction.Create(OpCodes.Ldarg_0),
-			Instruction.Create(OpCodes.Ldflda, protoField.Instance()),  // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
-			Instruction.Create(OpCodes.Ldfld, dictField),   // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
-			Instruction.Create(OpCodes.Ldtoken, method.GenericParameters[0]), // !!L
-			Instruction.Create(OpCodes.Call, TypeFromHandle),    // class [mscorlib]System.Type [mscorlib]System.Type::GetTypeFromHandle(valuetype [mscorlib]System.RuntimeTypeHandle)
-			Instruction.Create(OpCodes.Callvirt, dictGetMethod),// instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::get_Item(!0)
-			Instruction.Create(OpCodes.Ldnull),
-			Instruction.Create(OpCodes.Ceq), 
-			Instruction.Create(OpCodes.Stloc_1),
-			Instruction.Create(OpCodes.Ldloc_1),
-			Instruction.Create(OpCodes.Brtrue_S, firstOpcode), // IL_004b
-
-			Instruction.Create(OpCodes.Nop), 
-			Instruction.Create(OpCodes.Ldarg_0),
-			Instruction.Create(OpCodes.Ldflda, protoField.Instance()), // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
-			Instruction.Create(OpCodes.Ldfld, dictField), // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
-			Instruction.Create(OpCodes.Ldtoken, method.GenericParameters[0]), // !!L
-			Instruction.Create(OpCodes.Call, TypeFromHandle), // class [mscorlib]System.Type [mscorlib]System.Type::GetTypeFromHandle(valuetype [mscorlib]System.RuntimeTypeHandle)
-			Instruction.Create(OpCodes.Callvirt, dictGetMethod), // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::get_Item(!0)
-			Instruction.Create(OpCodes.Castclass, protoDelegate), // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
-			Instruction.Create(OpCodes.Ldarg_0),
-			Instruction.Create(OpCodes.Ldarg_1), 
-			Instruction.Create(OpCodes.Callvirt, protoInvoke), // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(!1)
-			Instruction.Create(OpCodes.Stloc_0),
-			Instruction.Create(OpCodes.Br_S, lastOpcode), // IL_0055
-			};
-
-			foreach (Instruction inst in instructions)
-				il.InsertBefore(firstOpcode, inst);
-		}
-
-		private static void AddInstancePrototypeCall(MethodDefinition method)
-		{
-			var parentClass = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
-			var prototypeField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
-			var delegateField = parentClass.Fields.Single(m => m.Name == ComposeFullMethodName(method));
-
-			var firstOpcode = method.Body.Instructions.First();
 			var il = method.Body.GetILProcessor();
+			List<Instruction> jmpReplacements = new List<Instruction>();
 
-			TypeDefinition delegateType = delegateField.FieldType.Resolve();
-			var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
-			int allParamsCount = method.Parameters.Count + 1; //all params and this
+			//setup body variables
+			method.Body.Variables.Add(new VariableDefinition("key", systemTypeArray)); //key dictionary
+			method.Body.Variables.Add(new VariableDefinition(method.ReturnType)); //data to return
+			method.Body.Variables.Add(new VariableDefinition(systemTypeArray)); //key dictionary
+			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool)))); //for evaluation of conditions
 
-			var instructions = new[]
+			il.Emit(OpCodes.Nop);
+			//making a key variable
+			il.Emit(OpCodes.Ldc_I4, method.GenericParameters.Count);
+			il.Emit(OpCodes.Newarr, systemTypeClass); // [mscorlib]System.Type
+			il.Emit(OpCodes.Stloc_2);
+
+			for (int i = 0; i < method.GenericParameters.Count; i++)
 			{
-				il.Create(OpCodes.Ldarg_0),
-				il.Create(OpCodes.Ldflda, prototypeField.Instance()),
-				il.Create(OpCodes.Ldfld, delegateField.Instance()),
-				il.Create(OpCodes.Brfalse, firstOpcode),
+				il.Emit(OpCodes.Ldloc_2);
+				il.Emit(OpCodes.Ldc_I4, i);
+				il.Emit(OpCodes.Ldtoken, method.GenericParameters[i]);
+				il.Emit(OpCodes.Call, TypeFromHandle); // class [mscorlib]System.Type [mscorlib]System.Type::GetTypeFromHandle(valuetype [mscorlib]System.RuntimeTypeHandle)
+				il.Emit(OpCodes.Stelem_Ref);
+			}
 
-				il.Create(OpCodes.Ldarg_0),
-				il.Create(OpCodes.Ldflda, prototypeField.Instance()),
-				il.Create(OpCodes.Ldfld, delegateField.Instance()),
-			}.Concat(
-				Enumerable.Range(0, allParamsCount).Select(i => il.Create(OpCodes.Ldarg, i))
-			).Concat(new[]
+			il.Emit(OpCodes.Ldloc_2);
+			il.Emit(OpCodes.Stloc_0);
+
+			if (!method.IsStatic)
 			{
-				il.Create(OpCodes.Callvirt, invokeMethod.Instance()),
-				il.Create(OpCodes.Ret),
-			});
-
-			foreach (var instruction in instructions)
-				il.InsertBefore(firstOpcode, instruction);
+				//finding key in dictionary
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldflda, protoField.Instance());
+				il.Emit(OpCodes.Ldfld, dictField);
+				il.Emit(OpCodes.Ldloc_0);
+				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
+				il.Emit(OpCodes.Ldc_I4_0);
+				il.Emit(OpCodes.Ceq);
+				il.Emit(OpCodes.Stloc_3);
+				il.Emit(OpCodes.Ldloc_3);
+				il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); //will be replaced
+				jmpReplacements.Add(il.Body.Instructions.Last());
+				
+				//if key is found - call proto function
+				il.Emit(OpCodes.Nop); 
+				il.Emit(OpCodes.Ldarg_0);
+				il.Emit(OpCodes.Ldflda, protoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
+				il.Emit(OpCodes.Ldfld, dictField); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+				il.Emit(OpCodes.Ldloc_0);
+				il.Emit(OpCodes.Callvirt, dictGetItemMethod); // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object>::get_Item(!0)
+				il.Emit(OpCodes.Castclass, protoDelegate); // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
+				for (int i = 0; i < method.Parameters.Count() + 1; i++ )
+					il.Emit(OpCodes.Ldarg, i);
+				
+				il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
+				il.Emit(OpCodes.Stloc_1); //
+				il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); // IL_0067
+			}
 		}
 
 		private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
@@ -480,23 +468,6 @@ namespace Mice
 				else
 					property.SetMethod = result;
 			}
-
-			//repalce old method body
-			var il = method.Body.GetILProcessor();
-			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
-
-			for (int i = 0; i < allParamsCount; i++)
-				il.Emit(OpCodes.Ldarg, i);
-
-			il.Emit(OpCodes.Call, result.Instance());
-			
-			if (method.HasGenericParameters)
-			{
-				il.Emit(OpCodes.Stloc_0);
-				il.Emit(OpCodes.Ldloc_0);
-			}
-			
-			il.Emit(OpCodes.Ret);
 			return result;
 		}
 
@@ -529,16 +500,7 @@ namespace Mice
 			return FullName.ToString();
 		}
 
-		private static void ImportGenericParams(this TypeDefinition type, TypeReference source)
-		{
-			if (source.HasGenericParameters)
-			{
-				foreach (var parentGenericParam in source.GenericParameters)
-					type.GenericParameters.Add(new GenericParameter(parentGenericParam.Name, type));
-			}
-		}
-
-		private static void ImportGenericParams(this TypeDefinition type, MethodReference source)
+		private static void ImportGenericParams(this TypeDefinition type, IGenericParameterProvider source)
 		{
 			if (source.HasGenericParameters)
 			{
@@ -557,6 +519,18 @@ namespace Mice
 
 		//Instance methods are used to convert *Definition -> *Reference
 
+		public static FieldReference Instance(this FieldDefinition self)
+		{
+			FieldReference result = new FieldReference(self.Name, self.FieldType);
+			result.DeclaringType = self.DeclaringType.Instance();
+
+			if (self.DeclaringType.HasGenericParameters)
+			{
+				//((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
+			}
+			return result;
+		}
+
 		private static TypeReference Instance(this TypeDefinition self)
 		{
 			if (self.HasGenericParameters)
@@ -570,10 +544,11 @@ namespace Mice
 			return self;
 		}
 
-		public static MethodReference Instance(this MethodDefinition self, params ICollection<GenericParameter>[] addons)
+		//that one is for normal use - like calling class members, etc 
+		public static MethodReference Instance(this MethodDefinition self)
 		{
 			var declaringType = self.DeclaringType.Instance();
-			
+
 			var reference = new MethodReference(self.Name, self.ReturnType, declaringType);
 			reference.HasThis = self.HasThis;
 			reference.ExplicitThis = self.ExplicitThis;
@@ -583,7 +558,7 @@ namespace Mice
 				reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
 
 			foreach (var generic_parameter in self.GenericParameters)
-			    reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
+				reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
 
 			if (self.HasGenericParameters)
 			{
@@ -595,16 +570,26 @@ namespace Mice
 			return reference;
 		}
 
-		public static FieldReference Instance(this FieldDefinition self)
+		//that one is for virtual calls. Generic Arguments are set manually.
+		public static MethodReference Instance(this MethodDefinition self, params ICollection<GenericParameter>[] genericArgs)
 		{
-			FieldReference result = new FieldReference(self.Name, self.FieldType);
-			result.DeclaringType = self.DeclaringType.Instance();
+			var declaringType = new GenericInstanceType(self.DeclaringType);
+			foreach (var param in genericArgs)
+				foreach (var genericParameter in param)
+					declaringType.GenericArguments.Add(genericParameter);
 
-			if (self.DeclaringType.HasGenericParameters)
-			{
-				//((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
-			}
-			return result;
+			//TODO: WARNING! that may be wrong! need testing...
+			var ret = new TypeReference(null, self.ReturnType.Name, self.Module, self.ReturnType.Scope);
+
+			var reference = new MethodReference(self.Name, ret, declaringType);
+			reference.HasThis = self.HasThis;
+			reference.ExplicitThis = self.ExplicitThis;
+			reference.CallingConvention = self.CallingConvention;
+
+			foreach (var parameter in self.Parameters)
+				reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
+
+			return reference;
 		}
 
 		#endregion

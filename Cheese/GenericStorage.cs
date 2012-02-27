@@ -34,10 +34,10 @@ namespace Cheese
             return String.Format("{0} {1}", greeting, typeof(T).ToString());
         }
 
-		//public static string IntroduceItselfStatic()
-		//{
-		//    return "Hi i am just a static method";
-		//}
+		public static string IntroduceItselfStatic()
+		{
+		    return "Hi i am just a static method";
+		}
 
 		//public A makeMeA<A>(A item)
 		//{
@@ -49,26 +49,27 @@ namespace Cheese
 		//    return makeMeA<B>(item);
 		//}
 
-		public M MakeMeSomeM<M>(M param)
+		public M MakeMeSomeM<M,W>(M param, W param2)
 		{
-			return param;
+		    return param;
 		}
 
-		public L MakeSomeL<L>(L param)
+		public L MakeSomeL<L,H>(L param, H param2)
 		{
-			if (testSample.Dict[typeof(L)] != null)
-			{
-				return ((Test.Maker<L>)testSample.Dict[typeof(L)]).Invoke(this, param);
-			}
-			return MakeMeSomeM<L>(param);
+			Type[] key = {typeof(L),typeof(H)};
+			if (testSample.Dict.ContainsKey(key))
+		    {
+				return ((Test.Maker<L,H>)testSample.Dict[key]).Invoke(this, param, param2);
+		    }
+		    return MakeMeSomeM<L,H>(param, param2);
 		}
 		
-    	public struct Test
-    	{
-			public Dictionary<Type, object> Dict;
-			public delegate K Maker<K>(GenericStorage<T> self, K item);
-    	}
+		public struct Test
+		{
+		    public Dictionary<Type[], object> Dict;
+		    public delegate K Maker<K,J>(GenericStorage<T> self, K item, J item2);
+		}
 
-    	public Test testSample = new GenericStorage<T>.Test();
+		public Test testSample = new GenericStorage<T>.Test();
     }
 }
