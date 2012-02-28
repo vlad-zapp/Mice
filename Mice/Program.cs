@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -7,7 +8,6 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
 using StrongNameKeyPair = System.Reflection.StrongNameKeyPair;
-using System.IO;
 using FieldAttributes = Mono.Cecil.FieldAttributes;
 using MethodAttributes = Mono.Cecil.MethodAttributes;
 using MethodBody = Mono.Cecil.Cil.MethodBody;
@@ -96,7 +96,6 @@ namespace Mice
 					//TODO:gona make it public. later
 					CreateDeligateType(privateDefaultCtor);
 					CreateDeligateField(privateDefaultCtor);
-
 					AddPrototypeCalls(privateDefaultCtor, MoveCodeToImplMethod(privateDefaultCtor));
 					CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
 				}
@@ -200,6 +199,55 @@ namespace Mice
 			Property.SetMethod = set;
 			prototypeType.Methods.Add(set);
 			prototypeType.Properties.Add(Property);
+
+			//Create method. just create method)
+			var setMethod = new MethodDefinition("Set" + ComposeFullMethodName(method),
+			                                     MethodAttributes.Public | MethodAttributes.HideBySig,
+			                                     method.Module.Import(typeof (void)));
+			
+			//TODO: correct that!
+			setMethod.ImportGenericParams(delegateType);
+
+			//TODO:could we make it better way? LINQ?
+			var dt = new GenericInstanceType(delegateType);
+			foreach (var param in setMethod.GenericParameters)
+				if(method.DeclaringType.GenericParameters.SingleOrDefault(n=>n.Name==param.Name)!=null)
+					dt.GenericArguments.Add(method.DeclaringType.GenericParameters.SingleOrDefault(n => n.Name == param.Name));
+				else
+					dt.GenericArguments.Add(param);
+			//setMethod.Parameters.Add(new ParameterDefinition("self",ParameterAttributes.None, prototypeType));
+			setMethod.Parameters.Add(new ParameterDefinition("code", ParameterAttributes.None, dt));
+
+			var systemTypeClass = method.Module.Import(typeof(Type));
+			var TypeFromHandle = method.Module.Import(systemTypeClass.Resolve().Methods.Single(m => m.Name == "GetTypeFromHandle"));
+			var dictProperty = prototypeType.Properties.Single(m => m.Name == ComposeFullMethodName(method));
+			
+			Type[] systemFuncs = { typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>), typeof(Func<,,,,>)};
+			var systemFuncClass = method.Module.Import(systemFuncs[method.GenericParameters.Count-1]);
+			systemFuncClass = new GenericInstanceType(systemFuncClass);
+			foreach (var param in method.GenericParameters)
+				((GenericInstanceType)systemFuncClass).GenericArguments.Add(param);
+
+
+			var dictType = method.Module.Import(typeof(Dictionary<Type, object>));
+			var dictAddMethod = method.Module.Import(dictType.Resolve().Methods.Single(m => m.Name == "Add"));
+			dictAddMethod.DeclaringType = dictType;
+
+
+			il = setMethod.Body.GetILProcessor();
+			
+			il.Emit(OpCodes.Nop);
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Call, dictProperty.GetMethod.Instance()); // instance class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::get_DictAccesor()
+			il.Emit(OpCodes.Ldtoken, systemFuncClass); // class [System.Core]System.Func`2<!!L, !!H>
+			il.Emit(OpCodes.Call, TypeFromHandle); // class [mscorlib]System.Type [mscorlib]System.Type::GetTypeFromHandle(valuetype [mscorlib]System.RuntimeTypeHandle)
+			il.Emit(OpCodes.Ldarg_1);
+			il.Emit(OpCodes.Callvirt,dictAddMethod); // instance void class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::Add(!0, !1)
+			il.Emit(OpCodes.Nop);
+			il.Emit(OpCodes.Ret);
+
+			prototypeType.Methods.Add(setMethod);
+			setMethod.DeclaringType = prototypeType;
 		}
 
 		private static TypeDefinition CreatePrototypeType(TypeDefinition type)
@@ -370,9 +418,9 @@ namespace Mice
 		private static void AddGenericPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
 		{
 			//external types
-			var systemTypeClass = method.Module.Import(typeof(Type));
-			Type[] systemFuncs = {typeof(Func<>),typeof(Func<,>),typeof(Func<,,>),typeof(Func<,,,>),typeof(Func<,,,,>)};
+			Type[] systemFuncs = { typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>), typeof(Func<,,,,>)};
 			var systemFuncClass = method.Module.Import(systemFuncs[method.GenericParameters.Count-1]);
+			var systemTypeClass = method.Module.Import(typeof(Type));
 
 			//external call
 			var TypeFromHandle = method.Module.Import(systemTypeClass.Resolve().Methods.Single(m => m.Name == "GetTypeFromHandle"));
@@ -391,8 +439,6 @@ namespace Mice
 			//setup fields
 			var protoField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
 			var staticProtoField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
-			
-			var dictField = protoClassType.Fields.Single(m => m.Name == '_'+ComposeFullMethodName(method));
 			var dictProperty = protoClassType.Properties.Single(m => m.Name == ComposeFullMethodName(method));
 
 			//setup delegate proto
@@ -605,7 +651,7 @@ namespace Mice
 		{
 			foreach (var genericParam in source.GenericParameters)
 			{
-				self.GenericParameters.Add(genericParam);
+				self.GenericParameters.Add(new GenericParameter(genericParam.Name,self));
 			}
 		}
 
@@ -673,10 +719,6 @@ namespace Mice
 			foreach (var param in genericArgs)
 				foreach (var genericParameter in param)
 					declaringType.GenericArguments.Add(genericParameter);
-
-			//TODO: WARNING! that may be wrong! need testing...
-			//var ret = self.GenericParameters.Single(m => m.Name == self.ReturnType.Name);//new TypeReference(null, self.ReturnType.Name, self.Module, self.ReturnType.Scope);
-			//var ret = new TypeDefinition(null, self.ReturnType.Name, TypeAttributes.Public,null);
 
 			var reference = new MethodReference(self.Name, self.ReturnType, declaringType);
 			reference.HasThis = self.HasThis;

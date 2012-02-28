@@ -95,8 +95,12 @@ namespace Cheese
 					Dict = value;
 				}
 			}
-
 			public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
+
+			public void SetMakeSomeL<L,H>(Maker<L,H> target)
+			{
+				DictAccesor.Add(typeof(Func<L,H>),target);
+			}
 		}
 
 		public static Test testSampleStatic = new GenericStorage<T>.Test();

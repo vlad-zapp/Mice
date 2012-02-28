@@ -107,18 +107,16 @@ namespace Mice.Tests
 		[Test]
 		public void Xtest()
 		{
-			GenericStorage<int>.PrototypeClass.Callback_MakeMeSome_2<int, string> a = (x, y, z) => { return 10; };
+			GenericStorage<int>.PrototypeClass.Callback_MakeMeSome_2<int, string> a = (x, y, z) => { return 20; };
 
-			GenericStorage<int>.StaticPrototype = new GenericStorage<int>.PrototypeClass();
-			var xx = GenericStorage<int>.StaticPrototype.MakeMeSome_2;// = new Dictionary<Type, object>();
-			GenericStorage<int>.StaticPrototype.MakeMeSome_2.Add(typeof(Func<int,string>), a);
+			//GenericStorage<int>.StaticPrototype = new GenericStorage<int>.PrototypeClass();
+			//GenericStorage<int>.StaticPrototype.MakeMeSome_2.Add(typeof(Func<int,string>), a);
 
 			GenericStorage<int> test = new GenericStorage<int>();
 			test.GenericStorage_1Prototype = new GenericStorage<int>.PrototypeClass();
-			var xy = test.GenericStorage_1Prototype.MakeMeSome_2;// = new Dictionary<Type, object>();
 			test.GenericStorage_1Prototype.MakeMeSome_2.Add(typeof(Func<int, string>), a);
 
-			Assert.That(test.MakeMeSome<int,string>("s",10)==10);
+			Assert.That(test.MakeMeSome<int,string>("s",10)==20);
 		}
     }
 }
