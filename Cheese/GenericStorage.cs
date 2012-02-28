@@ -67,13 +67,13 @@ namespace Cheese
 		public L MakeSomeL<L, H>(L param, H param2)
 		{
 			Type key = typeof(Func<L,H>);
-			if (testSample.Dict.ContainsKey(key))
+			if (testSample.DictAccesor.ContainsKey(key))
 			{
-				return ((Test.Maker<L, H>)testSample.Dict[key]).Invoke(this, param, param2);
+				return ((Test.Maker<L, H>)testSample.DictAccesor[key]).Invoke(this, param, param2);
 			}
-			else if (GenericStorage<T>.testSampleStatic.Dict.ContainsKey(key))
+			else if (GenericStorage<T>.testSampleStatic.DictAccesor.ContainsKey(key))
 			{
-				return ((Test.Maker<L, H>)testSampleStatic.Dict[key]).Invoke(this, param, param2);
+				return ((Test.Maker<L, H>)testSampleStatic.DictAccesor[key]).Invoke(this, param, param2);
 			}
 			return MakeMeSomeM<L, H>(param, param2);
 		}
@@ -81,8 +81,22 @@ namespace Cheese
 		public struct Test
 		{
 			public Dictionary<Type, object> Dict;
+			public Dictionary<Type, object> DictAccesor { 
+				get
+				{
+					if(Dict==null)
+					{
+						Dict=new Dictionary<Type, object>();
+					}
+					return Dict;
+				}
+				set
+				{
+					Dict = value;
+				}
+			}
+
 			public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
-			public string _strin;
 		}
 
 		public static Test testSampleStatic = new GenericStorage<T>.Test();

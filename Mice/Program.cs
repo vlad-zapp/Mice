@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Text;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Collections.Generic;
 using StrongNameKeyPair = System.Reflection.StrongNameKeyPair;
 using System.IO;
 using FieldAttributes = Mono.Cecil.FieldAttributes;
@@ -133,40 +134,72 @@ namespace Mice
 			var prototypeType = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass");
 			var delegateType = prototypeType.NestedTypes.Single(m => m.Name == "Callback_" + ComposeFullMethodName(method));
 			var dicType = method.Module.Import(typeof(Dictionary<Type, object>));
+			var dicConst = method.Module.Import(typeof(Dictionary<Type, object>).GetConstructor(Type.EmptyTypes));
 
-			var protoDic = new FieldDefinition(ComposeFullMethodName(method), FieldAttributes.Public, dicType);
+
+			var protoDic = new FieldDefinition('_'+ComposeFullMethodName(method), FieldAttributes.Private, dicType);
 			protoDic.DeclaringType = prototypeType;
 			prototypeType.Fields.Add(protoDic);
 			
 			//TODO: initialize it somewhere
 
-			//prototypeType.Methods.Single(m => m.Name == ".ctor");
+			var Property = new PropertyDefinition(ComposeFullMethodName(method), PropertyAttributes.None, dicType);
+			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
+			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
 
-			//var Property = new PropertyDefinition(ComposeFullMethodName(method), PropertyAttributes.None, dicType);
-			//var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
-			//var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
+			//IL getter
+			get.Body.Variables.Add(new VariableDefinition(dicType));
+			get.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool))));
 
-			////simple IL getter
-			//get.Body.Variables.Add(new VariableDefinition(dicType));
-			//get.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
-			//get.Body.GetILProcessor().Emit(OpCodes.Ldfld, protoDic);
-			//get.Body.GetILProcessor().Emit(OpCodes.Stloc_0);
-			//get.Body.GetILProcessor().Emit(OpCodes.Ldloc_0);
-			//get.Body.GetILProcessor().Emit(OpCodes.Ret);
+			get.Body.InitLocals = true;
+			set.Body.InitLocals = true;
 
-			////simple IL setter
-			//set.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
-			//set.Body.GetILProcessor().Emit(OpCodes.Ldarg_1);
-			//set.Body.GetILProcessor().Emit(OpCodes.Stfld, protoDic);
-			//set.Body.GetILProcessor().Emit(OpCodes.Ret);
+			ICollection<Instruction> jmpReplacements = new Collection<Instruction>();
 
-			//Property.GetMethod = get;
-			//prototypeType.Methods.Add(get);
+			var il = get.Body.GetILProcessor();
 
-			//set.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, dicType));
-			//Property.SetMethod = set;
-			//prototypeType.Methods.Add(set);
-			//prototypeType.Properties.Add(Property);
+			//check for dictionary existance
+			il.Emit(OpCodes.Nop);
+			il.Emit(OpCodes.Ldarg_0); 
+			il.Emit(OpCodes.Ldfld, protoDic.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+			il.Emit(OpCodes.Ldnull); 
+			il.Emit(OpCodes.Ceq); 
+			il.Emit(OpCodes.Ldc_I4_0); 
+			il.Emit(OpCodes.Ceq); 
+			il.Emit(OpCodes.Stloc_1);
+			il.Emit(OpCodes.Ldloc_1);
+			il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); // IL_001e
+			jmpReplacements.Add(il.Body.Instructions.Last());
+
+			//create dictionary
+			il.Emit(OpCodes.Nop);
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Newobj,dicConst); // instance void class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::.ctor()
+			il.Emit(OpCodes.Stfld, protoDic.Instance());  // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+
+			il.Emit(OpCodes.Nop);
+			foreach (var jmpReplacement in jmpReplacements) jmpReplacement.Operand = il.Body.Instructions.Last();
+
+			//return dictionary
+			il.Emit(OpCodes.Ldarg_0);
+			il.Emit(OpCodes.Ldfld, protoDic.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+			il.Emit(OpCodes.Stloc_0);
+			il.Emit(OpCodes.Ldloc_0); 
+			il.Emit(OpCodes.Ret); 
+			
+			//IL setter
+			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_0);
+			set.Body.GetILProcessor().Emit(OpCodes.Ldarg_1);
+			set.Body.GetILProcessor().Emit(OpCodes.Stfld, protoDic.Instance());
+			set.Body.GetILProcessor().Emit(OpCodes.Ret);
+
+			Property.GetMethod = get;
+			prototypeType.Methods.Add(get);
+
+			set.Parameters.Add(new ParameterDefinition("value", ParameterAttributes.None, dicType));
+			Property.SetMethod = set;
+			prototypeType.Methods.Add(set);
+			prototypeType.Properties.Add(Property);
 		}
 
 		private static TypeDefinition CreatePrototypeType(TypeDefinition type)
@@ -280,7 +313,7 @@ namespace Mice
 			return result;
 		}
 
-		private static void AddPrototypeCalls(MethodDefinition method, MethodDefinition newMethod)
+		private static void AddPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
 		{
 			var staticPrototypeField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
 			var dynamicPrototypeField = method.DeclaringType.Fields.SingleOrDefault(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
@@ -330,7 +363,7 @@ namespace Mice
 				jmpReplacement.Operand = il.Body.Instructions.Last();
 
 			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
-			il.Emit(OpCodes.Call, newMethod.Instance());
+			il.Emit(OpCodes.Call, real_method.Instance());
 			il.Emit(OpCodes.Ret);
 		}
 
@@ -358,7 +391,9 @@ namespace Mice
 			//setup fields
 			var protoField = method.DeclaringType.Fields.Single(m => m.Name == method.DeclaringType.Name.Replace('`', '_') + "Prototype");
 			var staticProtoField = method.DeclaringType.Fields.Single(m => m.Name == "StaticPrototype");
-			var dictField = protoClassType.Fields.Single(m => m.Name == /*'_' +*/ ComposeFullMethodName(method));
+			
+			var dictField = protoClassType.Fields.Single(m => m.Name == '_'+ComposeFullMethodName(method));
+			var dictProperty = protoClassType.Properties.Single(m => m.Name == ComposeFullMethodName(method));
 
 			//setup delegate proto
 			var protoDelegate = new GenericInstanceType(protoDelegateType);
@@ -396,16 +431,9 @@ namespace Mice
 				//finding key in dictionary
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, protoField.Instance());	
-				il.Emit(OpCodes.Ldfld, dictField.Instance());
+				il.Emit(OpCodes.Call, dictProperty.GetMethod.Instance());
 				il.Emit(OpCodes.Ldloc_0);
-
-				
-				//WTF?
-				//il.Emit(OpCodes.Break);			
 				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
-				//il.Emit(OpCodes.Break);			
-	
-				
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ceq);
 				il.Emit(OpCodes.Stloc_2);
@@ -416,7 +444,7 @@ namespace Mice
 				//if key is found - call proto function
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, protoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
-				il.Emit(OpCodes.Ldfld, dictField.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+				il.Emit(OpCodes.Call, dictProperty.GetMethod.Instance());
 				il.Emit(OpCodes.Ldloc_0);
 				il.Emit(OpCodes.Callvirt, dictGetItemMethod); // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object>::get_Item(!0)
 				il.Emit(OpCodes.Castclass, protoDelegate); // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
@@ -435,7 +463,7 @@ namespace Mice
 
 			//finding key in static prototype dictionary
 			il.Emit(OpCodes.Ldsflda, staticProtoField.Instance());
-			il.Emit(OpCodes.Ldfld, dictField.Instance());
+			il.Emit(OpCodes.Call, dictProperty.GetMethod.Instance());
 			il.Emit(OpCodes.Ldloc_0);
 			il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
 			il.Emit(OpCodes.Ldc_I4_0);
@@ -448,7 +476,7 @@ namespace Mice
 			//if key is found - call proto function
 			il.Emit(OpCodes.Nop);
 			il.Emit(OpCodes.Ldsflda, staticProtoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
-			il.Emit(OpCodes.Ldfld, dictField.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
+			il.Emit(OpCodes.Call, dictProperty.GetMethod.Instance());
 			il.Emit(OpCodes.Ldloc_0);
 			il.Emit(OpCodes.Callvirt, dictGetItemMethod); // instance !1 class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object>::get_Item(!0)
 			il.Emit(OpCodes.Castclass, protoDelegate); // class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>
