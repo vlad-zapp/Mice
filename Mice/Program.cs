@@ -140,7 +140,7 @@ namespace Mice
 			
 			//TODO: initialize it somewhere
 
-			prototypeType.Methods.Single(m => m.Name == ".ctor");
+			//prototypeType.Methods.Single(m => m.Name == ".ctor");
 
 			//var Property = new PropertyDefinition(ComposeFullMethodName(method), PropertyAttributes.None, dicType);
 			//var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
@@ -255,7 +255,7 @@ namespace Mice
 				invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType.Instance()));
 			}
 
-			if (method.ReturnType.IsGenericParameter)
+			if (method.ReturnType.IsGenericParameter && method.GenericParameters.SingleOrDefault(m=>m.Name==method.ReturnType.Name)!=null)
 			{
 				invoke.GenericParameters.Add(new GenericParameter(method.ReturnType.Name, invoke));
 			}

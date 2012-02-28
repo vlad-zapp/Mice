@@ -103,5 +103,11 @@ namespace Mice.Tests
 
 			Assert.That(test.MeAnd2Objects<string, int>(10, "a") == "test");
 		}
+
+		[Test]
+		public void Xtest()
+		{
+			GenericStorage<int>.PrototypeClass.Callback_MakeMeSome_2<int, string> a = (x, y, z) => { return "10"; };
+		}
     }
 }

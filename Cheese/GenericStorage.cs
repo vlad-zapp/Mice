@@ -54,10 +54,10 @@ namespace Cheese
 		    return this.ToString() + obj.ToString() + obj2.ToString();
 		}
 
-		//public K MakeMeSome<K,J>(J arg, K arg2)
-		//{
-		//    return arg2;
-		//}
+		public K MakeMeSome<K, J>(J arg, K arg2)
+		{
+			return arg2;
+		}
 
 		public string MakeMeSomeM<M, W>(M param, W param2)
 		{
