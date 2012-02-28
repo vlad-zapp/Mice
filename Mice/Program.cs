@@ -244,20 +244,21 @@ namespace Mice
 			constructor.IsRuntime = true;
 			result.Methods.Add(constructor);
 
+			//not a good solution, but it don't work any other way
+			var ret = method.ReturnType;
+			if (method.ReturnType.IsGenericParameter && method.GenericParameters.SingleOrDefault(m=>m.Name==method.ReturnType.Name)!=null)
+				ret = result.GenericParameters.SingleOrDefault(m => m.Name == method.ReturnType.Name);
+			
+
 			//create Invoke
 			var invoke = new MethodDefinition("Invoke",
 											  MethodAttributes.Public | MethodAttributes.HideBySig |
-											  MethodAttributes.NewSlot | MethodAttributes.Virtual, method.ReturnType);
+											  MethodAttributes.NewSlot | MethodAttributes.Virtual, ret);
 
 			invoke.IsRuntime = true;
 			if (!method.IsStatic)
 			{
 				invoke.Parameters.Add(new ParameterDefinition("self", ParameterAttributes.None, method.DeclaringType.Instance()));
-			}
-
-			if (method.ReturnType.IsGenericParameter && method.GenericParameters.SingleOrDefault(m=>m.Name==method.ReturnType.Name)!=null)
-			{
-				invoke.GenericParameters.Add(new GenericParameter(method.ReturnType.Name, invoke));
 			}
 
 			foreach (var param in method.Parameters)
@@ -270,6 +271,7 @@ namespace Mice
 				else
 					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
 			}
+
 			result.Methods.Add(invoke);
 
 			//the rest of the process
@@ -373,6 +375,7 @@ namespace Mice
 			var allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1);
 
 			//setup body variables
+			method.Body.InitLocals = true;
 			method.Body.Variables.Add(new VariableDefinition(systemTypeClass)); //key
 			method.Body.Variables.Add(new VariableDefinition(method.ReturnType)); //data to return
 			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool)))); //for evaluation of conditions
@@ -387,15 +390,22 @@ namespace Mice
 			il.Emit(OpCodes.Ldtoken, systemFuncClass);
 			il.Emit(OpCodes.Call,TypeFromHandle);
 			il.Emit(OpCodes.Stloc_0);
-
+			
 			if (!method.IsStatic)
 			{
 				//finding key in dictionary
 				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldflda, protoField.Instance());
+				il.Emit(OpCodes.Ldflda, protoField.Instance());	
 				il.Emit(OpCodes.Ldfld, dictField.Instance());
 				il.Emit(OpCodes.Ldloc_0);
+
+				
+				//WTF?
+				//il.Emit(OpCodes.Break);			
 				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
+				//il.Emit(OpCodes.Break);			
+	
+				
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ceq);
 				il.Emit(OpCodes.Stloc_2);
@@ -404,7 +414,6 @@ namespace Mice
 				jmpReplacements.Add(il.Body.Instructions.Last()); //=>to static prototype
 
 				//if key is found - call proto function
-				il.Emit(OpCodes.Nop);
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, protoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
 				il.Emit(OpCodes.Ldfld, dictField.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type[], object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
@@ -488,6 +497,7 @@ namespace Mice
 
 			result.IsRuntimeSpecialName = false;
 			result.IsVirtual = false;
+			
 			if (method.IsConstructor)
 				result.IsSpecialName = false;
 
@@ -499,6 +509,7 @@ namespace Mice
 
 			//copy method's body to x-method      
 			result.Body = method.Body;
+
 			method.Body = new MethodBody(method);
 
 			//add x-method to a type
@@ -579,6 +590,7 @@ namespace Mice
 
 			if (self.DeclaringType.HasGenericParameters)
 			{
+
 				//((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
 			}
 			return result;

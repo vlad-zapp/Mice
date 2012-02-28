@@ -59,12 +59,12 @@ namespace Cheese
 			return arg2;
 		}
 
-		public string MakeMeSomeM<M, W>(M param, W param2)
+		public M MakeMeSomeM<M, W>(M param, W param2)
 		{
-			return "hi, i am makesomem";
+			return param;
 		}
 
-		public string MakeSomeL<L, H>(L param, H param2)
+		public L MakeSomeL<L, H>(L param, H param2)
 		{
 			Type key = typeof(Func<L,H>);
 			if (testSample.Dict.ContainsKey(key))
@@ -81,7 +81,7 @@ namespace Cheese
 		public struct Test
 		{
 			public Dictionary<Type, object> Dict;
-			public delegate string Maker<K, J>(GenericStorage<T> self, K item, J item2);
+			public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
 			public string _strin;
 		}
 
