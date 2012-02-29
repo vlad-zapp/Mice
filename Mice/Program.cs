@@ -73,7 +73,7 @@ namespace Mice
 		private static void ProcessType(TypeDefinition type)
 		{
 			//TODO: why not?)
-			//foreach (var next in type.NestedTypes)
+			//foreach (var next in type.NestedTypes.Where(IsTypeToBeProcessed))
 			//{
 			//    ProcessType(next);
 			//}
@@ -89,6 +89,26 @@ namespace Mice
 
 			//After using of Mice there always should be a way to create an instance of public class
 			//Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
+
+			
+
+			//create delegate types & fields, patch methods to call delegates
+			var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
+			foreach (var method in processingMethods)
+			{
+				CreateDeligateType(method);
+
+				if (method.HasGenericParameters)
+				{
+					CreateMethodPrototypesDictionary(method);
+					AddGenericPrototypeCalls(method, MoveCodeToImplMethod(method));
+				}
+				else
+				{
+					CreateDeligateField(method);
+					AddPrototypeCalls(method, MoveCodeToImplMethod(method));
+				}
+			}
 
 			if (!type.IsAbstract)
 			{
@@ -113,24 +133,6 @@ namespace Mice
 					//because now we create bulic constructor instead of private one
 					CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
 
-				}
-			}
-
-			//create delegate types & fields, patch methods to call delegates
-			var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
-			foreach (var method in processingMethods)
-			{
-				CreateDeligateType(method);
-
-				if (method.HasGenericParameters)
-				{
-					CreateMethodPrototypesDictionary(method);
-					AddGenericPrototypeCalls(method, MoveCodeToImplMethod(method));
-				}
-				else
-				{
-					CreateDeligateField(method);
-					AddPrototypeCalls(method, MoveCodeToImplMethod(method));
 				}
 			}
 		}
@@ -584,7 +586,6 @@ namespace Mice
 
 			//copy method's body to x-method      
 			result.Body = method.Body;
-
 			method.Body = new MethodBody(method);
 
 			//add x-method to a type
@@ -614,7 +615,7 @@ namespace Mice
 		private static string ComposeFullMethodName(MethodDefinition method)
 		{
 			StringBuilder FullName = new StringBuilder();
-			bool includeParamsToName = method.DeclaringType.Methods.Where(m => m.Name == method.Name).Count() > 1;
+			bool includeParamsToName = method.DeclaringType.Methods.Where(IsMethodToBeProcessed).Where(m => m.Name == method.Name).Count() > 1;
 
 			FullName.Append(method.IsConstructor ? "Ctor" : method.Name);
 			if (includeParamsToName)
@@ -635,7 +636,7 @@ namespace Mice
 			if (method.HasGenericParameters)
 				FullName.Append('_' + method.GenericParameters.Count.ToString());
 
-			return FullName.ToString();
+			return FullName.ToString().Replace('`','_');
 		}
 
 		private static void ImportGenericParams(this TypeDefinition type, IGenericParameterProvider source)

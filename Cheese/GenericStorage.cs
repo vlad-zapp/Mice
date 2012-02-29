@@ -128,4 +128,21 @@ namespace Cheese
 		//public static Test testSampleStatic = new GenericStorage<T>.Test();
 		//public Test testSample = new GenericStorage<T>.Test();
 	}
+
+	public class testClass<T, M> : GenericStorage<T>
+	{
+		public testClass(T arg, M arg2):base(arg)
+		{
+		}
+
+		public string M_AsString(M arg)
+		{
+			return arg.ToString();
+		}
+
+		public M GiveM<L>(M arg, L arg2, M arg3)
+		{
+			return arg;
+		}
+	}
 }

@@ -97,11 +97,11 @@ namespace Mice.Tests
 		[Test]
 		public void StaticAndDynamicProtoOverrideTest()
 		{
-			GenericStorage<int>.StaticPrototype.SetMakeMeSome_2<int,string>((x, y, z) => { return 20; });
-
 			GenericStorage<int> test = new GenericStorage<int>();
 			test.GenericStorage_1Prototype = new GenericStorage<int>.PrototypeClass();
+
 			test.GenericStorage_1Prototype.SetMakeMeSome_2<int,string>((x, y, z) => { return 30; });
+			GenericStorage<int>.StaticPrototype.SetMakeMeSome_2<int, string>((x, y, z) => { return 20; });
 
 			Assert.That(test.MakeMeSome<int, string>("s", 10) == 30);
 		}
@@ -128,5 +128,14 @@ namespace Mice.Tests
 					new GenericStorage<GenericStorage<int>>(new GenericStorage<int>(2)), new GenericStorage<bool>(true));
 			Assert.That(result == "Yes! I am string!2True");
 		}
+
+
+		[Test]
+		public void DerrivedClassTest()
+		{
+			var a = new testClass<int,string>();
+
+		}
+
 	}
 }
