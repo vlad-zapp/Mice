@@ -27,8 +27,8 @@ namespace Mice
 			string victimName = args[0];
 			string keyFile = args.Length > 1 ? args[1] : null;
 
-			//try
-			//{
+			try
+			{
 			var assembly = AssemblyDefinition.ReadAssembly(victimName);
 			foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
 				ProcessType(type);
@@ -39,13 +39,13 @@ namespace Mice
 
 			assembly.Write(victimName, writerParams);
 			return 0;
-			//}
-			//catch (Exception e)
-			//{
-			//    Console.WriteLine("Error. " + e.ToString());
-			//    Console.ReadKey();
-			//    return 1;
-			//}
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine("Error. " + e.ToString());
+				Console.ReadKey();
+				return 1;
+			}
 		}
 
 		private static int Using()
@@ -142,18 +142,18 @@ namespace Mice
 			var dicType = method.Module.Import(typeof(Dictionary<Type, object>));
 			var dicConst = method.Module.Import(typeof(Dictionary<Type, object>).GetConstructor(Type.EmptyTypes));
 
-
+			//Create the dictionary itself
 			var protoDic = new FieldDefinition('_'+ComposeFullMethodName(method), FieldAttributes.Private, dicType);
 			protoDic.DeclaringType = prototypeType;
 			prototypeType.Fields.Add(protoDic);
-			
-			//TODO: initialize it somewhere
 
+			//Create property for the dictionary. 
 			var Property = new PropertyDefinition(ComposeFullMethodName(method), PropertyAttributes.None, dicType);
-			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
-			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Public | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
+			var get = new MethodDefinition("get_" + Property.Name, MethodAttributes.Assembly | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, dicType);
+			var set = new MethodDefinition("set_" + Property.Name, MethodAttributes.Assembly | MethodAttributes.SpecialName | MethodAttributes.CompilerControlled | MethodAttributes.HideBySig, method.Module.Import(typeof(void)));
 
 			//IL getter
+			//used to create the dictionary object if it's not initialized.
 			get.Body.Variables.Add(new VariableDefinition(dicType));
 			get.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool))));
 
@@ -186,7 +186,7 @@ namespace Mice
 			il.Emit(OpCodes.Nop);
 			foreach (var jmpReplacement in jmpReplacements) jmpReplacement.Operand = il.Body.Instructions.Last();
 
-			//return dictionary
+			//return dictionary reference
 			il.Emit(OpCodes.Ldarg_0);
 			il.Emit(OpCodes.Ldfld, protoDic.Instance()); // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
 			il.Emit(OpCodes.Stloc_0);
@@ -207,15 +207,13 @@ namespace Mice
 			prototypeType.Methods.Add(set);
 			prototypeType.Properties.Add(Property);
 
-			//Create method. just create method)
+			//Create set* method
 			var setMethod = new MethodDefinition("Set" + ComposeFullMethodName(method),
 			                                     MethodAttributes.Public | MethodAttributes.HideBySig,
 			                                     method.Module.Import(typeof (void)));
 			
-			//TODO: correct that!
 			setMethod.ImportGenericParams(method);
 
-			//TODO:could we make it better way? LINQ?
 			var dt = new GenericInstanceType(delegateType);
 			foreach (var param in method.DeclaringType.GenericParameters.Concat(setMethod.GenericParameters))
 				dt.GenericArguments.Add(param);
@@ -284,9 +282,7 @@ namespace Mice
 			var il = result.Body.GetILProcessor();
 			il.Emit(OpCodes.Newobj, defCtor.Instance());
 			il.Emit(OpCodes.Ret);
-
 			prototypeType.Methods.Add(result);
-
 			return result;
 		}
 
@@ -454,7 +450,8 @@ namespace Mice
 			var protoInvoke = protoDelegateType.Methods.Single(m => m.Name == "Invoke");
 
 			var il = method.Body.GetILProcessor();
-			//thus is a place to store instructions, which operands needs to b
+
+			//this is a place to store instructions, which operands needs to be replaced
 			List<Instruction> jmpReplacements = new List<Instruction>();
 
 			var allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1);
@@ -619,7 +616,6 @@ namespace Mice
 			StringBuilder FullName = new StringBuilder();
 			bool includeParamsToName = method.DeclaringType.Methods.Where(m => m.Name == method.Name).Count() > 1;
 
-
 			FullName.Append(method.IsConstructor ? "Ctor" : method.Name);
 			if (includeParamsToName)
 				foreach (var p in method.Parameters)
@@ -665,12 +661,6 @@ namespace Mice
 		{
 			FieldReference result = new FieldReference(self.Name, self.FieldType);
 			result.DeclaringType = self.DeclaringType.Instance();
-
-			if (self.DeclaringType.HasGenericParameters)
-			{
-
-				//((GenericInstanceType) self.FieldType).GenericArguments.Add(self.DeclaringType.GenericParameters[0]);
-			}
 			return result;
 		}
 

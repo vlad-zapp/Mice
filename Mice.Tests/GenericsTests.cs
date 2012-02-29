@@ -80,13 +80,7 @@ namespace Mice.Tests
 		{
 			GenericStorage<int> test = new GenericStorage<int>();
 
-			//looks ugly, but it works!
-			GenericStorage<int>.PrototypeClass.Callback_MeAnd2Objects_2<string, int> b = (x, y, z) => { return "test"; };
-
-			//TODO:initialize it in PrototypeType's ctor
-			test.GenericStorage_1Prototype.MeAnd2Objects_2 = new Dictionary<Type, object>();
-
-			test.GenericStorage_1Prototype.MeAnd2Objects_2.Add(typeof(Func<string, int>), b);
+			test.GenericStorage_1Prototype.SetMeAnd2Objects_2<string, int>((x, y, z) => { return "test"; });
 
 			Assert.That(test.MeAnd2Objects<string, int>(10, "a") == "test");
 		}
@@ -94,29 +88,22 @@ namespace Mice.Tests
 		[Test]
 		public void GenericMethodInStaticProtoTest()
 		{
-			GenericStorage<int>.PrototypeClass.Callback_MeAnd2Objects_2<string, int> b = (x, y, z) => { return "test"; };
-			GenericStorage<int>.StaticPrototype.MeAnd2Objects_2 = new Dictionary<Type, object>();
-			GenericStorage<int>.StaticPrototype.MeAnd2Objects_2.Add((typeof(Func<string, int>)), b);
-
+			GenericStorage<int>.StaticPrototype.SetMeAnd2Objects_2<string,int>((x, y, z) => { return "test"; });
 			GenericStorage<int> test = new GenericStorage<int>(10);
-			test.GenericStorage_1Prototype.MeAnd2Objects_2 = new Dictionary<Type, object>();
-
+			
 			Assert.That(test.MeAnd2Objects<string, int>(10, "a") == "test");
 		}
 
 		[Test]
-		public void Xtest()
+		public void StaticAndDynamicProtoOverrideTest()
 		{
-			GenericStorage<int>.PrototypeClass.Callback_MakeMeSome_2<int, string> a = (x, y, z) => { return 20; };
-
-			//GenericStorage<int>.StaticPrototype = new GenericStorage<int>.PrototypeClass();
-			//GenericStorage<int>.StaticPrototype.MakeMeSome_2.Add(typeof(Func<int,string>), a);
+			GenericStorage<int>.StaticPrototype.SetMakeMeSome_2<int,string>((x, y, z) => { return 20; });
 
 			GenericStorage<int> test = new GenericStorage<int>();
 			test.GenericStorage_1Prototype = new GenericStorage<int>.PrototypeClass();
-			test.GenericStorage_1Prototype.MakeMeSome_2.Add(typeof(Func<int, string>), a);
+			test.GenericStorage_1Prototype.SetMakeMeSome_2<int,string>((x, y, z) => { return 30; });
 
-			Assert.That(test.MakeMeSome<int, string>("s", 10) == 20);
+			Assert.That(test.MakeMeSome<int, string>("s", 10) == 30);
 		}
 
 		[Test]
