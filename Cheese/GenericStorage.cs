@@ -64,46 +64,68 @@ namespace Cheese
 			return param;
 		}
 
-		public L MakeSomeL<L, H>(L param, H param2)
+		public class NestedSurprise
 		{
-			Type key = typeof(Func<L,H>);
-			if (testSample.DictAccesor.ContainsKey(key))
-			{
-				return ((Test.Maker<L, H>)testSample.DictAccesor[key]).Invoke(this, param, param2);
-			}
-			else if (GenericStorage<T>.testSampleStatic.DictAccesor.ContainsKey(key))
-			{
-				return ((Test.Maker<L, H>)testSampleStatic.DictAccesor[key]).Invoke(this, param, param2);
-			}
-			return MakeMeSomeM<L, H>(param, param2);
-		}
+			 public static string GiveMeLove(int times)
+			 {
+			 	string ret ="";
+				for (int i = 0; i < times; i++) ret += "Love";
+			 	return ret;
+			 }
 
-		public struct Test
-		{
-			public Dictionary<Type, object> Dict;
-			public Dictionary<Type, object> DictAccesor { 
-				get
-				{
-					if(Dict==null)
-					{
-						Dict=new Dictionary<Type, object>();
-					}
-					return Dict;
-				}
-				set
-				{
-					Dict = value;
-				}
-			}
-			public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
-
-			public void SetMakeSomeL<L,H>(Maker<L,H> target)
+			public GenericStorage<T> MakeMyParentSample()
 			{
-				DictAccesor.Add(typeof(Func<L,H>),target);
+				return new GenericStorage<T>(default(T));
+			}
+
+			public string Mystery { set; private get; }
+
+			public string TellASecret()
+			{
+				return Mystery;
 			}
 		}
 
-		public static Test testSampleStatic = new GenericStorage<T>.Test();
-		public Test testSample = new GenericStorage<T>.Test();
+		//public L MakeSomeL<L, H>(L param, H param2)
+		//{
+		//    Type key = typeof(Func<L,H>);
+		//    if (testSample.DictAccesor.ContainsKey(key))
+		//    {
+		//        return ((Test.Maker<L, H>)testSample.DictAccesor[key]).Invoke(this, param, param2);
+		//    }
+		//    else if (GenericStorage<T>.testSampleStatic.DictAccesor.ContainsKey(key))
+		//    {
+		//        return ((Test.Maker<L, H>)testSampleStatic.DictAccesor[key]).Invoke(this, param, param2);
+		//    }
+		//    return MakeMeSomeM<L, H>(param, param2);
+		//}
+
+		//public struct Test
+		//{
+		//    public Dictionary<Type, object> Dict;
+		//    public Dictionary<Type, object> DictAccesor { 
+		//        get
+		//        {
+		//            if(Dict==null)
+		//            {
+		//                Dict=new Dictionary<Type, object>();
+		//            }
+		//            return Dict;
+		//        }
+		//        set
+		//        {
+		//            Dict = value;
+		//        }
+		//    }
+		//    public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
+
+		//    public void SetMakeSomeL<L,H>(Maker<L,H> target)
+		//    {
+		//        DictAccesor.Add(typeof(Func<L,H>),target);
+		//    }
+		//}
+
+		//public static Test testSampleStatic = new GenericStorage<T>.Test();
+		//public Test testSample = new GenericStorage<T>.Test();
 	}
 }

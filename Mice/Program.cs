@@ -72,6 +72,13 @@ namespace Mice
 
 		private static void ProcessType(TypeDefinition type)
 		{
+			//TODO: why not?)
+			//foreach (var next in type.NestedTypes)
+			//{
+			//    ProcessType(next);
+			//}
+
+
 			TypeDefinition prototypeType = CreatePrototypeType(type);
 
 			FieldDefinition prototypeField = new FieldDefinition(type.Name.Replace('`', '_') + "Prototype", FieldAttributes.Public, prototypeType.Instance());
@@ -206,16 +213,13 @@ namespace Mice
 			                                     method.Module.Import(typeof (void)));
 			
 			//TODO: correct that!
-			setMethod.ImportGenericParams(delegateType);
+			setMethod.ImportGenericParams(method);
 
 			//TODO:could we make it better way? LINQ?
 			var dt = new GenericInstanceType(delegateType);
-			foreach (var param in setMethod.GenericParameters)
-				if(method.DeclaringType.GenericParameters.SingleOrDefault(n=>n.Name==param.Name)!=null)
-					dt.GenericArguments.Add(method.DeclaringType.GenericParameters.SingleOrDefault(n => n.Name == param.Name));
-				else
-					dt.GenericArguments.Add(param);
-			//setMethod.Parameters.Add(new ParameterDefinition("self",ParameterAttributes.None, prototypeType));
+			foreach (var param in method.DeclaringType.GenericParameters.Concat(setMethod.GenericParameters))
+				dt.GenericArguments.Add(param);
+			
 			setMethod.Parameters.Add(new ParameterDefinition("code", ParameterAttributes.None, dt));
 
 			var systemTypeClass = method.Module.Import(typeof(Type));
