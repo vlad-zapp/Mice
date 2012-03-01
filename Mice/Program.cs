@@ -7,12 +7,6 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 using Mono.Collections.Generic;
 using StrongNameKeyPair = System.Reflection.StrongNameKeyPair;
-using FieldAttributes = Mono.Cecil.FieldAttributes;
-using MethodAttributes = Mono.Cecil.MethodAttributes;
-using MethodBody = Mono.Cecil.Cil.MethodBody;
-using ParameterAttributes = Mono.Cecil.ParameterAttributes;
-using PropertyAttributes = Mono.Cecil.PropertyAttributes;
-using TypeAttributes = Mono.Cecil.TypeAttributes;
 
 namespace Mice
 {
@@ -350,7 +344,7 @@ namespace Mice
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
 
 
-			if (!method.IsStatic)
+			if (!method.IsStatic && !method.IsConstructor)
 			{
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
@@ -448,8 +442,8 @@ namespace Mice
 			il.Emit(OpCodes.Ldtoken, systemFuncClass);
 			il.Emit(OpCodes.Call,TypeFromHandle);
 			il.Emit(OpCodes.Stloc_0);
-			
-			if (!method.IsStatic)
+
+			if (!method.IsStatic && !method.IsConstructor)
 			{
 				//finding key in dictionary
 				il.Emit(OpCodes.Ldarg_0);
