@@ -86,9 +86,9 @@ namespace Mice
 				var DefaultCtor =
 					type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsStatic);
 
-				if (DefaultCtor != null && DefaultCtor.IsPrivate)
+				if (DefaultCtor != null && !DefaultCtor.IsPublic)
 				{
-					DefaultCtor.Attributes = DefaultCtor.Attributes ^ MethodAttributes.Private | MethodAttributes.Public;
+					DefaultCtor.IsPublic = true;
 				}
 				else if (DefaultCtor == null) //there is not default ctor, neither private nor public
 				{
