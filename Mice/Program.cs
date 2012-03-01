@@ -2,7 +2,6 @@
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -63,21 +62,20 @@ namespace Mice
 				type.BaseType.Name != "MulticastDelegate";
 		}
 
-		private static bool IsMethodToBeProcessed(MethodDefinition m)
+		private static bool IsMethodToBeProcessed(MethodDefinition method)
 		{
-			return (m.IsPublic) &&
-				!m.IsAbstract &&
-				!(m.IsStatic && m.IsConstructor);
+			return (method.IsPublic) &&
+				!method.IsAbstract &&
+				!(method.IsStatic && method.IsConstructor);
 		}
 
 		private static void ProcessType(TypeDefinition type)
 		{
-			//TODO: why not?)
+			//TODO: why not?
 			//foreach (var next in type.NestedTypes.Where(IsTypeToBeProcessed))
 			//{
 			//    ProcessType(next);
 			//}
-
 
 			TypeDefinition prototypeType = CreatePrototypeType(type);
 
@@ -89,8 +87,20 @@ namespace Mice
 
 			//After using of Mice there always should be a way to create an instance of public class
 			//Here we create methods that can call parameterless ctor, evern if there is no parameterless ctor :)
+			if (!type.IsAbstract)
+			{
+				var DefaultCtor =
+					type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsStatic);
 
-			
+				if (DefaultCtor != null && DefaultCtor.IsPrivate)
+				{
+					DefaultCtor.Attributes = DefaultCtor.Attributes ^ MethodAttributes.Private | MethodAttributes.Public;
+				}
+				else if (DefaultCtor == null) //there is not default ctor, neither private nor public
+				{
+					DefaultCtor = CreateDefaultCtor(type);
+				}
+			}
 
 			//create delegate types & fields, patch methods to call delegates
 			var processingMethods = type.Methods.Where(IsMethodToBeProcessed).ToArray();
@@ -107,32 +117,6 @@ namespace Mice
 				{
 					CreateDeligateField(method);
 					AddPrototypeCalls(method, MoveCodeToImplMethod(method));
-				}
-			}
-
-			if (!type.IsAbstract)
-			{
-				var privateDefaultCtor =
-					type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && !m.IsPublic && !m.IsStatic);
-
-				var publicDefaultCtor =
-						type.Methods.SingleOrDefault(m => m.IsConstructor && !m.HasParameters && m.IsPublic && !m.IsStatic);
-
-				if (privateDefaultCtor != null)
-				{
-					//TODO:gona make it public. later
-					CreateDeligateType(privateDefaultCtor);
-					CreateDeligateField(privateDefaultCtor);
-					AddPrototypeCalls(privateDefaultCtor, MoveCodeToImplMethod(privateDefaultCtor));
-					CreateCallToPrivateCtor(privateDefaultCtor, prototypeType);
-				}
-				else if (publicDefaultCtor == null) //there is not default ctor, neither private nor public
-				{
-					publicDefaultCtor = CreateDefaultCtor(type);
-					//that is here only for compability with old tests
-					//because now we create bulic constructor instead of private one
-					CreateCallToPrivateCtor(publicDefaultCtor, prototypeType);
-
 				}
 			}
 		}
@@ -276,16 +260,6 @@ namespace Mice
 			type.Methods.Add(constructor);
 			constructor.Body.GetILProcessor().Emit(OpCodes.Ret);
 			return constructor;
-		}
-
-		private static MethodDefinition CreateCallToPrivateCtor(MethodDefinition defCtor, TypeDefinition prototypeType)
-		{
-			MethodDefinition result = new MethodDefinition("CallCtor", MethodAttributes.Public, defCtor.DeclaringType);
-			var il = result.Body.GetILProcessor();
-			il.Emit(OpCodes.Newobj, defCtor.Instance());
-			il.Emit(OpCodes.Ret);
-			prototypeType.Methods.Add(result);
-			return result;
 		}
 
 		private static FieldDefinition CreateDeligateField(MethodDefinition method)

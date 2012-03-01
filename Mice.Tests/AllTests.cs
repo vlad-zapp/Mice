@@ -180,13 +180,13 @@ namespace Mice.Tests
         public void PrivateCtorTest()
         {
             Civilian.StaticPrototype.Ctor = self => self.xName = "ABC";
-            var civilian = Civilian.StaticPrototype.CallCtor();
+        	var civilian = new Civilian();
 
             Assert.That(civilian.Name, Is.EqualTo("ABC"));
 
             Assert.That(new Doctor("Brain").Specialization, Is.EqualTo("Brain"));
 
-            Doctor doctor = Doctor.StaticPrototype.CallCtor();
+            Doctor doctor = new Doctor();
             Assert.That(doctor.Specialization, Is.Null);
         }
 
@@ -207,5 +207,33 @@ namespace Mice.Tests
             d.AddPatients(new[] {d});
             Assert.That(wasCalled);
         }
+
+		[Test]
+		public void CtorTests()
+		{
+			HaveDefaultPrivateCtor a = new HaveDefaultPrivateCtor();
+			Assert.That(a.Data == "initialized by default private ctor");
+			HaveDefaultPrivateCtor.StaticPrototype.Ctor = (e) => { e.Data = "initialized by custom ctor"; };
+			a = new HaveDefaultPrivateCtor();
+			Assert.That(a.Data == "initialized by custom ctor");
+
+			HaveDefaultPublicCtor b = new HaveDefaultPublicCtor();
+			Assert.That(b.Data == "Initialized by default public ctor");
+			HaveDefaultPublicCtor.StaticPrototype.Ctor = (e) => { e.Data = "custom public ctor!"; };
+			b = new HaveDefaultPublicCtor();
+			Assert.That(b.Data == "custom public ctor!");
+
+			HaveJustNonDefaultCtor c = new HaveJustNonDefaultCtor("non default!");
+			Assert.That(c.Data == "non default!");
+			HaveJustNonDefaultCtor.StaticPrototype.Ctor = (e) => { e.Data = "and default ctor now too!"; };
+			c = new HaveJustNonDefaultCtor();
+			Assert.That(c.Data == "and default ctor now too!");
+
+			HaveNoCtorAtAll d = new HaveNoCtorAtAll();
+			Assert.That(d.Data == null);
+			HaveNoCtorAtAll.StaticPrototype.Ctor = (e) => { e.Data = "this is ghost ctor!!!"; };
+			d = new HaveNoCtorAtAll();
+			Assert.That(d.Data == "this is ghost ctor!!!");
+		}
     }
 }

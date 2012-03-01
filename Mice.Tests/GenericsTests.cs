@@ -128,14 +128,5 @@ namespace Mice.Tests
 					new GenericStorage<GenericStorage<int>>(new GenericStorage<int>(2)), new GenericStorage<bool>(true));
 			Assert.That(result == "Yes! I am string!2True");
 		}
-
-
-		[Test]
-		public void DerrivedClassTest()
-		{
-			var a = new testClass<int,string>();
-
-		}
-
 	}
 }
