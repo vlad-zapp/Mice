@@ -92,7 +92,7 @@ namespace Mice
 				}
 				else if (DefaultCtor == null) //there is not default ctor, neither private nor public
 				{
-					DefaultCtor = CreateDefaultCtor(type);
+					CreateDefaultCtor(type);
 				}
 			}
 
@@ -154,8 +154,7 @@ namespace Mice
 			il.Emit(OpCodes.Ceq); 
 			il.Emit(OpCodes.Stloc_1);
 			il.Emit(OpCodes.Ldloc_1);
-			il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); // IL_001e
-			jmpReplacements.Add(il.Body.Instructions.Last());
+			il.Emit(OpCodes.Brtrue_S, label("returnDict")); // IL_001e
 
 			//create dictionary
 			il.Emit(OpCodes.Nop);
@@ -163,8 +162,7 @@ namespace Mice
 			il.Emit(OpCodes.Newobj,dicConst); // instance void class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::.ctor()
 			il.Emit(OpCodes.Stfld, protoDic.Instance());  // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
 
-			il.Emit(OpCodes.Nop);
-			foreach (var jmpReplacement in jmpReplacements) jmpReplacement.Operand = il.Body.Instructions.Last();
+			il.SetLabel("returnDict");
 
 			//return dictionary reference
 			il.Emit(OpCodes.Ldarg_0);
@@ -338,7 +336,7 @@ namespace Mice
 			var delegateField = method.DeclaringType.NestedTypes.Single(m => m.Name == "PrototypeClass").Fields.Single(m => m.Name == ComposeFullMethodName(method));
 
 			var il = method.Body.GetILProcessor();
-			List<Instruction> jmpReplacements = new List<Instruction>();
+
 			TypeDefinition delegateType = delegateField.FieldType.Resolve();
 			var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
@@ -349,8 +347,7 @@ namespace Mice
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
 				il.Emit(OpCodes.Ldfld, delegateField.Instance());
-				il.Emit(OpCodes.Brfalse, il.Body.Instructions.First());
-				jmpReplacements.Add(il.Body.Instructions.Last()); //addres will be replaced
+				il.Emit(OpCodes.Brfalse, label("nextCheck"));
 
 				il.Emit(OpCodes.Ldarg_0);
 				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
@@ -360,25 +357,19 @@ namespace Mice
 				il.Emit(OpCodes.Ret);
 			}
 
-			il.Emit(OpCodes.Nop);
-			foreach (var jmpReplacement in jmpReplacements)
-				jmpReplacement.Operand = il.Body.Instructions.Last();
-			jmpReplacements.Clear();
+			il.SetLabel("nextCheck");
 
 			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
 			il.Emit(OpCodes.Ldfld, delegateField.Instance());
-			il.Emit(OpCodes.Brfalse, il.Body.Instructions.First()); //addres will be replaced
-			jmpReplacements.Add(il.Body.Instructions.Last());
-
+			il.Emit(OpCodes.Brfalse, label("callDefault")); //addres will be replaced
+			
 			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
 			il.Emit(OpCodes.Ldfld, delegateField.Instance());
 			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
 			il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
 			il.Emit(OpCodes.Ret);
 
-			il.Emit(OpCodes.Nop);
-			foreach (var jmpReplacement in jmpReplacements)
-				jmpReplacement.Operand = il.Body.Instructions.Last();
+			il.SetLabel("callDefault");
 
 			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
 			il.Emit(OpCodes.Call, real_method.Instance());
@@ -455,8 +446,7 @@ namespace Mice
 				il.Emit(OpCodes.Ceq);
 				il.Emit(OpCodes.Stloc_2);
 				il.Emit(OpCodes.Ldloc_2);
-				il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); //will be replaced
-				jmpReplacements.Add(il.Body.Instructions.Last()); //=>to static prototype
+				il.Emit(OpCodes.Brtrue_S, label("KeyNotFound")); //will be replaced
 
 				//if key is found - call proto function
 				il.Emit(OpCodes.Ldarg_0);
@@ -470,12 +460,9 @@ namespace Mice
 
 				il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 				il.Emit(OpCodes.Stloc_1); //
-				il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); //will be replaced
+				il.Emit(OpCodes.Br_S, label("Exit")); //will be replaced
 
-				il.Emit(OpCodes.Nop);
-				jmpReplacements[0].Operand = il.Body.Instructions.Last();
-				jmpReplacements.Clear();
-				jmpReplacements.Add(il.Body.Instructions[il.Body.Instructions.Count - 2]); //=>to ret
+				il.SetLabel("KeyNotFound");
 			}
 
 			//finding key in static prototype dictionary
@@ -487,9 +474,8 @@ namespace Mice
 			il.Emit(OpCodes.Ceq);
 			il.Emit(OpCodes.Stloc_2);
 			il.Emit(OpCodes.Ldloc_2);
-			il.Emit(OpCodes.Brtrue_S, il.Body.Instructions.Last()); //will be replaced
-			jmpReplacements.Add(il.Body.Instructions.Last()); //=>to call to defualt x-method
-
+			il.Emit(OpCodes.Brtrue_S, label("CallDefault")); //will be replaced
+			
 			//if key is found - call proto function
 			il.Emit(OpCodes.Nop);
 			il.Emit(OpCodes.Ldsflda, staticProtoField.Instance()); // valuetype Cheese.GenericStorage`1/Test<!0> class Cheese.GenericStorage`1<!T>::testSample
@@ -502,23 +488,17 @@ namespace Mice
 
 			il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 			il.Emit(OpCodes.Stloc_1); //
-			il.Emit(OpCodes.Br_S, il.Body.Instructions.Last()); // IL_0067
-
-			il.Emit(OpCodes.Nop);
-			jmpReplacements.Last().Operand = il.Body.Instructions.Last();
-			jmpReplacements.Remove(jmpReplacements.Last());
-			jmpReplacements.Add(il.Body.Instructions[il.Body.Instructions.Count - 2]);
+			il.Emit(OpCodes.Br_S, label("Exit")); // IL_0067
 
 			//call x-method by default
+			il.SetLabel("CallDefault");
 			for (int i = 0; i < allParamsCount; i++)
 				il.Emit(OpCodes.Ldarg, i);
 			il.Emit(OpCodes.Call, real_method.Instance());
 			il.Emit(OpCodes.Stloc_1);
+
+			il.SetLabel("Exit");
 			il.Emit(OpCodes.Ldloc_1);
-
-			foreach (var jmpReplacement in jmpReplacements)
-				jmpReplacement.Operand = il.Body.Instructions.Last();
-
 			il.Emit(OpCodes.Ret);
 
 		}
@@ -662,8 +642,6 @@ namespace Mice
 			foreach (var generic_parameter in self.GenericParameters)
 				reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
 
-
-
 			if (self.HasGenericParameters && !self.IsGetter && !self.IsSetter)
 			{
 				reference = new GenericInstanceMethod(reference);
@@ -693,6 +671,38 @@ namespace Mice
 
 			return reference;
 		}
+
+		#region labels
+
+		private static void SetLabel(this ILProcessor self, string label)
+		{
+			OpCode[] AffectedOpCodes = { OpCodes.Br_S, OpCodes.Br, OpCodes.Brtrue, OpCodes.Brfalse, OpCodes.Brtrue_S, OpCodes.Brfalse_S };
+			bool nopMaked = false;
+
+			for (var i = 0; i < self.Body.Instructions.Count; i++)
+			{
+				var inst = self.Body.Instructions[i];
+				if (AffectedOpCodes.Contains(inst.OpCode) && inst.Operand.GetType() == typeof(Instruction) && ((Instruction)inst.Operand).Operand == label)
+				{
+					if (!nopMaked)
+					{
+						self.Emit(OpCodes.Nop);
+						nopMaked = true;
+					}
+					inst.Operand = self.Body.Instructions.Last();
+				}
+			}
+		}
+
+		private static Instruction label(string name)
+		{
+			return Instruction.Create(OpCodes.Ldstr, name);
+		}
+
+		private static Dictionary<string, int> Labels = new Dictionary<string, int>();
+
+
+		#endregion
 
 		#endregion
 	}
