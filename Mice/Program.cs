@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Mono.Collections.Generic;
+using Mice.Addons;
 using StrongNameKeyPair = System.Reflection.StrongNameKeyPair;
 
 namespace Mice
@@ -20,8 +20,8 @@ namespace Mice
 			string victimName = args[0];
 			string keyFile = args.Length > 1 ? args[1] : null;
 
-			try
-			{
+			//try
+			//{
 			var assembly = AssemblyDefinition.ReadAssembly(victimName);
 			foreach (var type in assembly.Modules.SelectMany(m => m.Types).Where(IsTypeToBeProcessed).ToArray())
 				ProcessType(type);
@@ -32,13 +32,13 @@ namespace Mice
 
 			assembly.Write(victimName, writerParams);
 			return 0;
-			}
-			catch (Exception e)
-			{
-				Console.WriteLine("Error. " + e.ToString());
-				Console.ReadKey();
-				return 1;
-			}
+			//}
+			//catch (Exception e)
+			//{
+			//    Console.WriteLine("Error. " + e.ToString());
+			//    Console.ReadKey();
+			//    return 1;
+			//}
 		}
 
 		private static int Using()
@@ -140,8 +140,6 @@ namespace Mice
 			get.Body.InitLocals = true;
 			set.Body.InitLocals = true;
 
-			ICollection<Instruction> jmpReplacements = new Collection<Instruction>();
-
 			var il = get.Body.GetILProcessor();
 
 			//check for dictionary existance
@@ -154,7 +152,7 @@ namespace Mice
 			il.Emit(OpCodes.Ceq); 
 			il.Emit(OpCodes.Stloc_1);
 			il.Emit(OpCodes.Ldloc_1);
-			il.Emit(OpCodes.Brtrue_S, label("returnDict")); // IL_001e
+			//il.Emit(OpCodes.Brtrue_S, extras.label("returnDict")); // IL_001e
 
 			//create dictionary
 			il.Emit(OpCodes.Nop);
@@ -162,7 +160,7 @@ namespace Mice
 			il.Emit(OpCodes.Newobj,dicConst); // instance void class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object>::.ctor()
 			il.Emit(OpCodes.Stfld, protoDic.Instance());  // class [mscorlib]System.Collections.Generic.Dictionary`2<class [mscorlib]System.Type, object> valuetype Cheese.GenericStorage`1/Test<!T>::Dict
 
-			il.SetLabel("returnDict");
+			//il.SetLabel("returnDict");
 
 			//return dictionary reference
 			il.Emit(OpCodes.Ldarg_0);
@@ -337,43 +335,86 @@ namespace Mice
 
 			var il = method.Body.GetILProcessor();
 
+			var ilp = new ILBuilder(il);
+
 			TypeDefinition delegateType = delegateField.FieldType.Resolve();
 			var invokeMethod = delegateType.Methods.Single(m => m.Name == "Invoke");
 			int allParamsCount = method.Parameters.Count + (method.IsStatic ? 0 : 1); //all params and maybe this
 
+			//if (!method.IsStatic && !method.IsConstructor)
+			//{
+			//    il.Emit(OpCodes.Ldarg_0);
+			//    il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
+			//    il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			//    il.Emit(OpCodes.Brfalse, extras.label("nextCheck"));
+
+			//    il.Emit(OpCodes.Ldarg_0);
+			//    il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
+			//    il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			//    for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+			//    il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
+			//    il.Emit(OpCodes.Ret);
+			//}
+
+			//il.SetLabel("nextCheck");
+
+			//il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
+			//il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			//il.Emit(OpCodes.Brfalse, extras.label("callDefault")); //addres will be replaced
+
+			//il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
+			//il.Emit(OpCodes.Ldfld, delegateField.Instance());
+			//for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+			//il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
+			//il.Emit(OpCodes.Ret);
+
+			//il.SetLabel("callDefault");
+
+			//for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
+			//il.Emit(OpCodes.Call, real_method.Instance());
+			//il.Emit(OpCodes.Ret);
 
 			if (!method.IsStatic && !method.IsConstructor)
 			{
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
-				il.Emit(OpCodes.Ldfld, delegateField.Instance());
-				il.Emit(OpCodes.Brfalse, label("nextCheck"));
+				ilp.known_objects.Add("invokeMethod", invokeMethod);
+				ilp.known_objects.Add("dynProtoField", dynamicPrototypeField);
+				ilp.known_objects.Add("delegateField", delegateField);
+				ilp.known_objects.Add("staticProtoField", staticPrototypeField);
+				ilp.known_objects.Add("statProtoField", staticPrototypeField);
+				ilp.known_objects.Add("real_method", real_method);
 
-				il.Emit(OpCodes.Ldarg_0);
-				il.Emit(OpCodes.Ldflda, dynamicPrototypeField.Instance());
-				il.Emit(OpCodes.Ldfld, delegateField.Instance());
-				for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
-				il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
-				il.Emit(OpCodes.Ret);
+				ilp.Parse(String.Format(@"
+					ldarg.0
+					ldflda dynProtoField
+					ldfld delegateField					
+					brfalse _nextCheck					
+
+					ldarg.0
+					ldflda dynProtoField
+					ldfld delegateField
+					ldarg [0-{0}]
+					callvirt invokeMethod
+					ret
+
+					_nextCheck:
+
+					ldflda staticProtoField
+					ldfld delegateField
+					brfalse _callDefault
+					
+					ldsflda statProtoField
+					ldfld delegateField
+					ldarg [0-{0}]
+					callvirt invokeMethod
+					ret
+
+					_callDefault:
+					ldarg [0-{0}]
+					call real_method
+					ret
+						
+				", allParamsCount));
 			}
-
-			il.SetLabel("nextCheck");
-
-			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
-			il.Emit(OpCodes.Ldfld, delegateField.Instance());
-			il.Emit(OpCodes.Brfalse, label("callDefault")); //addres will be replaced
-			
-			il.Emit(OpCodes.Ldsflda, staticPrototypeField.Instance());
-			il.Emit(OpCodes.Ldfld, delegateField.Instance());
-			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
-			il.Emit(OpCodes.Callvirt, invokeMethod.Instance());
-			il.Emit(OpCodes.Ret);
-
-			il.SetLabel("callDefault");
-
-			for (int i = 0; i < allParamsCount; i++) il.Emit(OpCodes.Ldarg, i);
-			il.Emit(OpCodes.Call, real_method.Instance());
-			il.Emit(OpCodes.Ret);
 		}
 
 		private static void AddGenericPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
@@ -446,7 +487,7 @@ namespace Mice
 				il.Emit(OpCodes.Ceq);
 				il.Emit(OpCodes.Stloc_2);
 				il.Emit(OpCodes.Ldloc_2);
-				il.Emit(OpCodes.Brtrue_S, label("KeyNotFound")); //will be replaced
+				//il.Emit(OpCodes.Brtrue_S, extras.label("KeyNotFound")); //will be replaced
 
 				//if key is found - call proto function
 				il.Emit(OpCodes.Ldarg_0);
@@ -460,9 +501,9 @@ namespace Mice
 
 				il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 				il.Emit(OpCodes.Stloc_1); //
-				il.Emit(OpCodes.Br_S, label("Exit")); //will be replaced
+				//il.Emit(OpCodes.Br_S, extras.label("Exit")); //will be replaced
 
-				il.SetLabel("KeyNotFound");
+				//il.SetLabel("KeyNotFound");
 			}
 
 			//finding key in static prototype dictionary
@@ -474,7 +515,7 @@ namespace Mice
 			il.Emit(OpCodes.Ceq);
 			il.Emit(OpCodes.Stloc_2);
 			il.Emit(OpCodes.Ldloc_2);
-			il.Emit(OpCodes.Brtrue_S, label("CallDefault")); //will be replaced
+			//il.Emit(OpCodes.Brtrue_S, extras.label("CallDefault")); //will be replaced
 			
 			//if key is found - call proto function
 			il.Emit(OpCodes.Nop);
@@ -488,16 +529,16 @@ namespace Mice
 
 			il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 			il.Emit(OpCodes.Stloc_1); //
-			il.Emit(OpCodes.Br_S, label("Exit")); // IL_0067
+			//il.Emit(OpCodes.Br_S, extras.label("Exit")); // IL_0067
 
 			//call x-method by default
-			il.SetLabel("CallDefault");
+			//il.SetLabel("CallDefault");
 			for (int i = 0; i < allParamsCount; i++)
 				il.Emit(OpCodes.Ldarg, i);
 			il.Emit(OpCodes.Call, real_method.Instance());
 			il.Emit(OpCodes.Stloc_1);
 
-			il.SetLabel("Exit");
+			//il.SetLabel("Exit");
 			il.Emit(OpCodes.Ldloc_1);
 			il.Emit(OpCodes.Ret);
 
@@ -586,123 +627,6 @@ namespace Mice
 
 			return FullName.ToString().Replace('`','_');
 		}
-
-		private static void ImportGenericParams(this TypeDefinition type, IGenericParameterProvider source)
-		{
-			if (source.HasGenericParameters)
-			{
-				foreach (var parentGenericParam in source.GenericParameters)
-					type.GenericParameters.Add(new GenericParameter(parentGenericParam.Name, type));
-			}
-		}
-
-		private static void ImportGenericParams(this MethodReference self, IGenericParameterProvider source)
-		{
-			foreach (var genericParam in source.GenericParameters)
-			{
-				self.GenericParameters.Add(new GenericParameter(genericParam.Name,self));
-			}
-		}
-
-		//Instance methods are used to convert *Definition -> *Reference
-
-		public static FieldReference Instance(this FieldDefinition self)
-		{
-			FieldReference result = new FieldReference(self.Name, self.FieldType);
-			result.DeclaringType = self.DeclaringType.Instance();
-			return result;
-		}
-
-		private static TypeReference Instance(this TypeDefinition self)
-		{
-			if (self.HasGenericParameters)
-			{
-				var instance = new GenericInstanceType(self);
-				foreach (var argument in self.GenericParameters)
-					instance.GenericArguments.Add(argument);
-				return instance;
-			}
-			//implicit convertion TypeDefinition->TypeReference
-			return self;
-		}
-
-		//that one is for normal use - like calling class members, etc 
-		public static MethodReference Instance(this MethodDefinition self)
-		{
-			var declaringType = self.DeclaringType.Instance();
-
-			var reference = new MethodReference(self.Name, self.ReturnType, declaringType);
-			reference.HasThis = self.HasThis;
-			reference.ExplicitThis = self.ExplicitThis;
-			reference.CallingConvention = self.CallingConvention;
-
-			foreach (var parameter in self.Parameters)
-				reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
-
-			foreach (var generic_parameter in self.GenericParameters)
-				reference.GenericParameters.Add(new GenericParameter(generic_parameter.Name, reference));
-
-			if (self.HasGenericParameters && !self.IsGetter && !self.IsSetter)
-			{
-				reference = new GenericInstanceMethod(reference);
-				foreach (var genericParam in self.GenericParameters)
-					if (self.DeclaringType.GenericParameters.SingleOrDefault(m => m.Name == genericParam.Name) == null)
-						((GenericInstanceMethod)(reference)).GenericArguments.Add(genericParam);
-			}
-
-			return reference;
-		}
-
-		//that one is for virtual calls. Generic Arguments are set manually.
-		public static MethodReference Instance(this MethodDefinition self, params ICollection<GenericParameter>[] genericArgs)
-		{
-			var declaringType = new GenericInstanceType(self.DeclaringType);
-			foreach (var param in genericArgs)
-				foreach (var genericParameter in param)
-					declaringType.GenericArguments.Add(genericParameter);
-
-			var reference = new MethodReference(self.Name, self.ReturnType, declaringType);
-			reference.HasThis = self.HasThis;
-			reference.ExplicitThis = self.ExplicitThis;
-			reference.CallingConvention = self.CallingConvention;
-
-			foreach (var parameter in self.Parameters)
-				reference.Parameters.Add(new ParameterDefinition(parameter.ParameterType));
-
-			return reference;
-		}
-
-		#region labels
-
-		private static void SetLabel(this ILProcessor self, string label)
-		{
-			OpCode[] AffectedOpCodes = { OpCodes.Br_S, OpCodes.Br, OpCodes.Brtrue, OpCodes.Brfalse, OpCodes.Brtrue_S, OpCodes.Brfalse_S };
-			bool nopMaked = false;
-
-			for (var i = 0; i < self.Body.Instructions.Count; i++)
-			{
-				var inst = self.Body.Instructions[i];
-				if (AffectedOpCodes.Contains(inst.OpCode) && inst.Operand.GetType() == typeof(Instruction) && ((Instruction)inst.Operand).Operand == label)
-				{
-					if (!nopMaked)
-					{
-						self.Emit(OpCodes.Nop);
-						nopMaked = true;
-					}
-					inst.Operand = self.Body.Instructions.Last();
-				}
-			}
-		}
-
-		private static Instruction label(string name)
-		{
-			return Instruction.Create(OpCodes.Ldstr, name);
-		}
-
-		private static Dictionary<string, int> Labels = new Dictionary<string, int>();
-
-
-		#endregion
 
 		#endregion
 	}

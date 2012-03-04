@@ -44,11 +44,6 @@ namespace Cheese
 			return obj.ToString();
 		}
 
-		//public static string MakeMe2Strings<L, M>(L obj, M obj2)
-		//{
-		//    return obj.ToString() + obj2.ToString();
-		//}
-
 		public string MeAnd2Objects<L,M>(M obj, L obj2)
 		{
 		    return this.ToString() + obj.ToString() + obj2.ToString();
@@ -62,87 +57,6 @@ namespace Cheese
 		public M MakeMeSomeM<M, W>(M param, W param2)
 		{
 			return param;
-		}
-
-		public class NestedSurprise
-		{
-			 public static string GiveMeLove(int times)
-			 {
-			 	string ret ="";
-				for (int i = 0; i < times; i++) ret += "Love";
-			 	return ret;
-			 }
-
-			public GenericStorage<T> MakeMyParentSample()
-			{
-				return new GenericStorage<T>(default(T));
-			}
-
-			public string Mystery { set; private get; }
-
-			public string TellASecret()
-			{
-				return Mystery;
-			}
-		}
-
-		//public L MakeSomeL<L, H>(L param, H param2)
-		//{
-		//    Type key = typeof(Func<L,H>);
-		//    if (testSample.DictAccesor.ContainsKey(key))
-		//    {
-		//        return ((Test.Maker<L, H>)testSample.DictAccesor[key]).Invoke(this, param, param2);
-		//    }
-		//    else if (GenericStorage<T>.testSampleStatic.DictAccesor.ContainsKey(key))
-		//    {
-		//        return ((Test.Maker<L, H>)testSampleStatic.DictAccesor[key]).Invoke(this, param, param2);
-		//    }
-		//    return MakeMeSomeM<L, H>(param, param2);
-		//}
-
-		//public struct Test
-		//{
-		//    public Dictionary<Type, object> Dict;
-		//    public Dictionary<Type, object> DictAccesor { 
-		//        get
-		//        {
-		//            if(Dict==null)
-		//            {
-		//                Dict=new Dictionary<Type, object>();
-		//            }
-		//            return Dict;
-		//        }
-		//        set
-		//        {
-		//            Dict = value;
-		//        }
-		//    }
-		//    public delegate K Maker<K, J>(GenericStorage<T> self, K item, J item2);
-
-		//    public void SetMakeSomeL<L,H>(Maker<L,H> target)
-		//    {
-		//        DictAccesor.Add(typeof(Func<L,H>),target);
-		//    }
-		//}
-
-		//public static Test testSampleStatic = new GenericStorage<T>.Test();
-		//public Test testSample = new GenericStorage<T>.Test();
-	}
-
-	public class testClass<T, M> : GenericStorage<T>
-	{
-		public testClass(T arg, M arg2):base(arg)
-		{
-		}
-
-		public string M_AsString(M arg)
-		{
-			return arg.ToString();
-		}
-
-		public M GiveM<L>(M arg, L arg2, M arg3)
-		{
-			return arg;
 		}
 	}
 }
