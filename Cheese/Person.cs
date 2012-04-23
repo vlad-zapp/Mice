@@ -46,5 +46,16 @@ namespace Cheese
 			_isAlive = false;
 		}
 
+		public void WriteDefault<T>()
+		{
+			//param = default(T);
+		}
+
+		public bool WriteDefault2<T>()
+		{
+			WriteDefault<T>();
+			return false;
+		}
+
 	}
 }
