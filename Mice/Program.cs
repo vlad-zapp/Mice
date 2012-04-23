@@ -530,10 +530,6 @@ namespace Mice
 			else
 				name += method.Name;
 
-			if(method.Name.Contains("WriteDefault"))
-			{
-			}
-
 			MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
 
 			result.SemanticsAttributes = method.SemanticsAttributes;
@@ -545,7 +541,10 @@ namespace Mice
 				result.IsSpecialName = false;
 
 			foreach (var genericParam in method.GenericParameters)
+			{
 				result.GenericParameters.Add(new GenericParameter(genericParam.Name, result));
+				result.GenericParameters.Last().Attributes = genericParam.Attributes;
+			}
 
 			foreach (var param in method.Parameters)
 				result.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
@@ -573,6 +572,7 @@ namespace Mice
 				else
 					property.SetMethod = result;
 			}
+			
 			return result;
 		}
 

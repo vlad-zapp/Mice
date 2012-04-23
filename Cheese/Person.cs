@@ -63,7 +63,7 @@ namespace Cheese
 			return true;
 		}
 
-		public void WriteDefault4<T>(T param)
+		public void WriteDefault4<T>(T param) where T: class, new()
 		{
 			
 		}
