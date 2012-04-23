@@ -312,24 +312,14 @@ namespace Mice
 
 			foreach (var param in method.Parameters)
 			{
+				//thanks to cecil - it can't resolve param type properly.
+				//TODO: prettify/eliminate that hack
 				var type = result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name.Replace("&",""));
+				
 				if(type==null)
 					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
 				else
 					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, type));
-
-				//if (param.ParameterType.IsGenericParameter && !method.IsConstructor)
-				//{
-				//    //TODO: remake this
-				//    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name)));
-				//}
-				//else
-				//{
-				//    //var type = method.Module.GetType(param.ParameterType.FullName);
-				//    //var type = new GenericInstanceType(param.ParameterType);
-				//    var invokeParam = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
-				//    invoke.Parameters.Add(invokeParam);
-				//}
 			}
 
 			result.Methods.Add(invoke);
@@ -392,6 +382,7 @@ namespace Mice
 			//external types
 			Type[] systemFuncs;
 
+			//TODO: find a better way to check for void
 			if(method.ReturnType.FullName!="System.Void")
 				systemFuncs = new Type[]{ typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>) };
 			else

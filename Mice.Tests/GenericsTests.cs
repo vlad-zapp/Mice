@@ -12,6 +12,8 @@ namespace Mice.Tests
 	[TestFixture]
 	internal class GenericsTests
 	{
+		//TODO: check situations with ref/out params in generic methods of non-generic types
+
 		[Test]
 		public void SimplePrototypeCallTest()
 		{
