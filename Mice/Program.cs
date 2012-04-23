@@ -390,7 +390,7 @@ namespace Mice
 		private static void AddGenericPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
 		{
 			//external types
-			Type[] systemFuncs = { typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>), typeof(Func<,,,,>)};
+			Type[] systemFuncs = { typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>) };
 			var systemFuncClass = method.Module.Import(systemFuncs[method.GenericParameters.Count-1]);
 			var systemTypeClass = method.Module.Import(typeof(Type));
 
@@ -431,7 +431,10 @@ namespace Mice
 			//setup body variables
 			method.Body.InitLocals = true;
 			method.Body.Variables.Add(new VariableDefinition(systemTypeClass)); //key
-			method.Body.Variables.Add(new VariableDefinition(method.ReturnType)); //data to return
+			
+			if(method.ReturnType.FullName!="System.Void")
+				method.Body.Variables.Add(new VariableDefinition(method.ReturnType)); //data to return
+			
 			method.Body.Variables.Add(new VariableDefinition(method.Module.Import(typeof(bool)))); //for evaluation of conditions
 
 			il.Emit(OpCodes.Nop);
@@ -455,8 +458,8 @@ namespace Mice
 				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ceq);
-				//il.Emit(OpCodes.Stloc_2);
-				//il.Emit(OpCodes.Ldloc_2);
+				il.Emit(OpCodes.Stloc_2);
+				il.Emit(OpCodes.Ldloc_2);
 				il.Emit(OpCodes.Brtrue_S, label("KeyNotFound")); //will be replaced
 
 				//if key is found - call proto function
@@ -471,7 +474,8 @@ namespace Mice
 
 				il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 				//il.Emit(OpCodes.Stloc_1); //
-				il.Emit(OpCodes.Br_S, label("Exit")); //will be replaced
+				//il.Emit(OpCodes.Br_S, label("Exit")); //will be replaced
+				il.Emit(OpCodes.Ret);
 
 				il.SetLabel("KeyNotFound");
 			}
@@ -502,19 +506,17 @@ namespace Mice
 			il.Emit(OpCodes.Br_S, label("Exit")); // IL_0067
 
 			//call x-method by default
+			
 			il.SetLabel("CallDefault");
+			
 			for (int i = 0; i < allParamsCount; i++)
 				il.Emit(OpCodes.Ldarg,i);
 			il.Emit(OpCodes.Call, real_method.Instance());
 
 			//il.Emit(OpCodes.Stloc_1);
-
-			il.SetLabel("Exit");
-			
+			il.SetLabel("Exit");		
 			//il.Emit(OpCodes.Ldloc_1);
-			
 			il.Emit(OpCodes.Ret);
-
 		}
 
 		private static MethodDefinition MoveCodeToImplMethod(MethodDefinition method)
@@ -529,6 +531,10 @@ namespace Mice
 				name = "get_" + name + method.Name.Substring(4);
 			else
 				name += method.Name;
+
+			if(method.Name.Contains("WriteDefault"))
+			{
+			}
 
 			MethodDefinition result = new MethodDefinition(name, method.Attributes, method.ReturnType);
 

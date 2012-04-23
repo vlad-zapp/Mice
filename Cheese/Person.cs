@@ -63,5 +63,54 @@ namespace Cheese
 			return true;
 		}
 
+		public void WriteDefault4<T>(T param)
+		{
+			
+		}
+
+		public void WriteDefault5<T>(T param)
+		{
+
+		}
+
+		public void xxxWriteDefault5<T>(T param)
+		{
+			if(like_a_proto.WriteDefault4_1.ContainsKey(typeof(T)))
+			{
+				((Proto.Callback_WriteDefault4_1<T>)like_a_proto.WriteDefault4_1[typeof(T)]).Invoke(this,param);
+			} 
+			else
+			{
+				WriteDefault5(param);
+			}
+		}
+
+		public Proto like_a_proto = new Proto();
+
+		public class Proto
+		{
+			public delegate void Callback_WriteDefault4_1<T>(Person self, T param);
+
+			private Dictionary<Type, object> _WriteDefault4_1;
+			internal Dictionary<Type, object> WriteDefault4_1
+			{
+				get
+				{
+					if (this._WriteDefault4_1 == null)
+						this._WriteDefault4_1 = new Dictionary<Type, object>();
+					return this._WriteDefault4_1;
+				}
+				set
+				{
+					this._WriteDefault4_1 = value;
+				}
+			}
+
+			public void SetWriteDefault4_1<T>(Callback_WriteDefault4_1<T> code)
+			{
+				this.WriteDefault4_1.Add(typeof(Func<T>), (object)code);
+			}
+		}
+
 	}
 }
