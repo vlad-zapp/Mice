@@ -27,7 +27,7 @@ namespace Mice.Tests
 			p.WriteDefault<string>(out a);
 			p.WriteDefault3<string>("asd");
 
-			//p.WriteDefault4<string>("asd");
+			p.WriteDefault4<string>("asd");
 
 		}
 

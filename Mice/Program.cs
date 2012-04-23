@@ -390,7 +390,13 @@ namespace Mice
 		private static void AddGenericPrototypeCalls(MethodDefinition method, MethodDefinition real_method)
 		{
 			//external types
-			Type[] systemFuncs = { typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>) };
+			Type[] systemFuncs;
+
+			if(method.ReturnType.FullName!="System.Void")
+				systemFuncs = new Type[]{ typeof(Func<>), typeof(Func<,>), typeof(Func<,,>), typeof(Func<,,,>) };
+			else
+				systemFuncs = new Type[] { typeof(Action<>), typeof(Action<,>), typeof(Action<,,>), typeof(Action<,,,>) };
+			
 			var systemFuncClass = method.Module.Import(systemFuncs[method.GenericParameters.Count-1]);
 			var systemTypeClass = method.Module.Import(typeof(Type));
 
@@ -458,8 +464,8 @@ namespace Mice
 				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ceq);
-				il.Emit(OpCodes.Stloc_2);
-				il.Emit(OpCodes.Ldloc_2);
+				//il.Emit(OpCodes.Stloc_2);
+				//il.Emit(OpCodes.Ldloc_2);
 				il.Emit(OpCodes.Brtrue_S, label("KeyNotFound")); //will be replaced
 
 				//if key is found - call proto function
@@ -487,8 +493,8 @@ namespace Mice
 			il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
 			il.Emit(OpCodes.Ldc_I4_0);
 			il.Emit(OpCodes.Ceq);
-			il.Emit(OpCodes.Stloc_2);
-			il.Emit(OpCodes.Ldloc_2);
+			//il.Emit(OpCodes.Stloc_2);
+			//il.Emit(OpCodes.Ldloc_2);
 			il.Emit(OpCodes.Brtrue_S, label("CallDefault")); //will be replaced
 
 			//if key is found - call proto function
@@ -503,7 +509,8 @@ namespace Mice
 
 			il.Emit(OpCodes.Callvirt, protoInvoke.Instance(method.DeclaringType.GenericParameters, method.GenericParameters)); // instance !1 class Cheese.GenericStorage`1/Test/Maker`1<!T, !!L>::Invoke(class Cheese.GenericStorage`1<!0>, !1)
 			//il.Emit(OpCodes.Stloc_1); //
-			il.Emit(OpCodes.Br_S, label("Exit")); // IL_0067
+			//il.Emit(OpCodes.Br_S, label("Exit")); // IL_0067
+			il.Emit(OpCodes.Ret);
 
 			//call x-method by default
 			
@@ -514,7 +521,7 @@ namespace Mice
 			il.Emit(OpCodes.Call, real_method.Instance());
 
 			//il.Emit(OpCodes.Stloc_1);
-			il.SetLabel("Exit");		
+			//il.SetLabel("Exit");		
 			//il.Emit(OpCodes.Ldloc_1);
 			il.Emit(OpCodes.Ret);
 		}
