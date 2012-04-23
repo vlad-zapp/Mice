@@ -312,13 +312,24 @@ namespace Mice
 
 			foreach (var param in method.Parameters)
 			{
-				if (param.ParameterType.IsGenericParameter && !method.IsConstructor)
-				{
-					//TODO: remake this
-					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name)));
-				}
-				else
+				var type = result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name.Replace("&",""));
+				if(type==null)
 					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, param.ParameterType));
+				else
+					invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, type));
+
+				//if (param.ParameterType.IsGenericParameter && !method.IsConstructor)
+				//{
+				//    //TODO: remake this
+				//    invoke.Parameters.Add(new ParameterDefinition(param.Name, param.Attributes, result.GenericParameters.FirstOrDefault(m => m.Name == param.ParameterType.Name)));
+				//}
+				//else
+				//{
+				//    //var type = method.Module.GetType(param.ParameterType.FullName);
+				//    //var type = new GenericInstanceType(param.ParameterType);
+				//    var invokeParam = new ParameterDefinition(param.Name, param.Attributes, param.ParameterType);
+				//    invoke.Parameters.Add(invokeParam);
+				//}
 			}
 
 			result.Methods.Add(invoke);
@@ -444,8 +455,8 @@ namespace Mice
 				il.Emit(OpCodes.Callvirt, dictContainsKeyMethod);
 				il.Emit(OpCodes.Ldc_I4_0);
 				il.Emit(OpCodes.Ceq);
-				il.Emit(OpCodes.Stloc_2);
-				il.Emit(OpCodes.Ldloc_2);
+				//il.Emit(OpCodes.Stloc_2);
+				//il.Emit(OpCodes.Ldloc_2);
 				il.Emit(OpCodes.Brtrue_S, label("KeyNotFound")); //will be replaced
 
 				//if key is found - call proto function

@@ -18,7 +18,15 @@ namespace Mice.Tests
             Soldier.StaticPrototype = new Soldier.PrototypeClass();
         }
 
-        [Test]
+		[Test]
+		public void test()
+		{
+			Person p = new Person();
+			string a = "hello";
+			p.WriteDefault<string>(out a);
+		}
+
+    	[Test]
         public void ExperementalTest()
         {
             Person p = new Person();
